@@ -1,0 +1,47 @@
+# Project state
+
+**Active feature:** none
+**Active branch:** main
+**Phase:** idle
+**Spec:** —
+**Plan:** —
+**Next step:** —
+
+## Last merge
+
+(none yet)
+
+## Parked features
+
+(none)
+
+## Open questions
+
+- (none)
+
+---
+
+<!--
+This file is the working pointer for Claude Code's devkit pack. It changes
+constantly during feature work and is cleared at `/feature-merge`.
+
+Field meanings:
+  Active feature  short slug matching docs/specs/<slug>.md, or "none"
+  Active branch   current git branch, or "main" when idle
+  Phase           one of: idle | spec-draft | spec-approved | plan-draft |
+                  plan-approved | building | checkpoint | merging
+  Spec / Plan     paths to the active spec and plan, or "—" when idle
+  Next step       short pointer to the next plan step when phase = building
+
+The Open questions section captures things deferred mid-feature that need
+the user's input. /checkpoint reads and helps resolve these.
+
+The Parked features section tracks features whose branch exists but whose
+active state has been cleared so a different feature can run. The
+canonical way to park is `/checkpoint park` (slice 4) — the documenter
+skill proposes the state.md edit and the Parked-features entry.
+Manually: (a) reset Active feature to none and Phase to idle, (b) append
+one line under "Parked features" naming the branch and what was last
+completed. Resume by checking out the branch and re-populating the top
+fields.
+-->
