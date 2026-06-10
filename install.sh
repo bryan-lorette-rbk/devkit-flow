@@ -1,47 +1,64 @@
 #!/usr/bin/env bash
-# install.sh — install the devkit Claude Code skill-pack into a target project.
+# install.sh — install or update the devkit Claude Code skill-pack in a target project.
 #
 # Usage:
-#   ./install.sh [TARGET_DIR] [--project-name NAME] [--description TEXT] [--mainline BRANCH]
+#   ./install.sh [TARGET_DIR] [flags]
 #
 # TARGET_DIR defaults to the current directory.
-# --project-name fills the {{PROJECT_NAME}} slot in CLAUDE.md (default: basename
-#   of TARGET_DIR).
-# --description fills the {{ONE_LINE_PROJECT_DESCRIPTION}} slot in CLAUDE.md
-#   (default: a placeholder that the user is reminded to edit).
-# --mainline overrides auto-detected default branch (`main` or `master`).
 #
-# What it does (idempotent — safe to re-run):
-#   1. Copies pack/{skills,agents,commands,hooks}/* into TARGET_DIR/.claude/
-#   2. Sets executable bit on the doc-drift-detector hook.
-#   3. Merges pack/hooks/settings.json.fragment into .claude/settings.json
-#      (preserves any existing keys; appends our hook entry if missing).
-#   4. Copies pack/state.md.template to .claude/state.md (only if missing).
-#   5. Copies pack/CLAUDE.md.template to CLAUDE.md at TARGET_DIR root with
-#      slot-fills applied (only if CLAUDE.md does not yet exist; warns otherwise).
-#   6. Ensures TARGET_DIR/.gitignore contains `__pycache__/` and `*.pyc`.
+# Flags:
+#   --project-name NAME     fill {{PROJECT_NAME}} in CLAUDE.md (default: basename TARGET_DIR)
+#   --description TEXT      fill {{ONE_LINE_PROJECT_DESCRIPTION}} (default: a placeholder)
+#   --mainline BRANCH       override auto-detected default branch (main / master)
+#   --force                 in update mode, overwrite locally-modified files (otherwise skipped)
+#   --dry-run               show the plan and exit without writing anything
+#   --help / -h             show this help
 #
-# What it doesn't do:
-#   - Does not git-init, branch, or commit anything in the target.
-#   - Does not overwrite an existing CLAUDE.md, settings.json, or state.md.
-#   - Does not install Claude Code itself or any other tooling.
+# Modes:
+#   - Fresh install: target has no .claude/.devkit-manifest.json.
+#       Copies pack files, stamps templates, sets up settings.json + .gitignore.
+#   - Update:       target has a manifest from a prior install.
+#       Computes per-file plan (UPDATE / SKIP / NEW / UNCHANGED), shows it,
+#       asks confirmation, applies. Locally-modified files are SKIPped unless
+#       --force is passed. CLAUDE.md and state.md are never auto-overwritten;
+#       template changes are surfaced as advisory diffs.
+#
+# After either path, writes:
+#   <target>/.claude/.devkit-manifest.json    (version + file hashes for future updates)
+#   <target>/.claude/.devkit-version          (version string, convenience)
+#
+# Idempotent. Safe to re-run.
 
 set -euo pipefail
 
 # --- Locate the pack relative to this script -----------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACK_DIR="$SCRIPT_DIR/pack"
+LIB="$SCRIPT_DIR/install_lib.py"
+VERSION_FILE="$SCRIPT_DIR/VERSION"
 
 if [[ ! -d "$PACK_DIR" ]]; then
   echo "error: cannot find pack/ next to install.sh (looked in $PACK_DIR)" >&2
   exit 1
 fi
+if [[ ! -f "$LIB" ]]; then
+  echo "error: cannot find install_lib.py next to install.sh (looked in $LIB)" >&2
+  exit 1
+fi
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "error: cannot find VERSION next to install.sh (looked in $VERSION_FILE)" >&2
+  exit 1
+fi
+
+PACK_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 
 # --- Parse args ----------------------------------------------------------------
 TARGET=""
 PROJECT_NAME=""
 DESCRIPTION=""
 MAINLINE=""
+FORCE=0
+DRY_RUN=0
 
 DESCRIPTION_PLACEHOLDER="(Add a one-line project description here.)"
 
@@ -53,8 +70,12 @@ while [[ $# -gt 0 ]]; do
       DESCRIPTION="$2"; shift 2 ;;
     --mainline)
       MAINLINE="$2"; shift 2 ;;
+    --force)
+      FORCE=1; shift ;;
+    --dry-run)
+      DRY_RUN=1; shift ;;
     --help|-h)
-      sed -n '2,30p' "$0"; exit 0 ;;
+      sed -n '2,32p' "$0"; exit 0 ;;
     -*)
       echo "error: unknown flag $1" >&2; exit 2 ;;
     *)
@@ -85,13 +106,9 @@ if [[ -z "$MAINLINE" ]]; then
   if [[ -d "$TARGET/.git" ]]; then
     MAINLINE="$(git -C "$TARGET" symbolic-ref --short HEAD 2>/dev/null || true)"
     if [[ -z "$MAINLINE" || "$MAINLINE" == "HEAD" ]]; then
-      # Look for main first, then master, then fall back to "main"
-      if git -C "$TARGET" show-ref --verify --quiet refs/heads/main; then
-        MAINLINE="main"
-      elif git -C "$TARGET" show-ref --verify --quiet refs/heads/master; then
-        MAINLINE="master"
-      else
-        MAINLINE="main"
+      if   git -C "$TARGET" show-ref --verify --quiet refs/heads/main;   then MAINLINE="main"
+      elif git -C "$TARGET" show-ref --verify --quiet refs/heads/master; then MAINLINE="master"
+      else MAINLINE="main"
       fi
     fi
   else
@@ -99,167 +116,293 @@ if [[ -z "$MAINLINE" ]]; then
   fi
 fi
 
-echo "==> Installing devkit pack into: $TARGET"
-echo "    project name : $PROJECT_NAME"
-echo "    mainline     : $MAINLINE"
-
-# --- 1. Copy pack/{skills,agents,commands,hooks}/* into .claude/ ---------------
 CLAUDE_DIR="$TARGET/.claude"
-mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/hooks"
+MANIFEST="$CLAUDE_DIR/.devkit-manifest.json"
+VERSION_STAMP="$CLAUDE_DIR/.devkit-version"
 
-copy_tree() {
+# --- Detect mode ---------------------------------------------------------------
+INSTALLED_VERSION="$(python3 "$LIB" manifest-read "$MANIFEST" 2>/dev/null || true)"
+if [[ -n "$INSTALLED_VERSION" ]]; then
+  MODE="update"
+else
+  MODE="fresh"
+fi
+
+echo "==> Target            : $TARGET"
+echo "==> Pack version      : $PACK_VERSION"
+if [[ "$MODE" == "update" ]]; then
+  echo "==> Installed version : $INSTALLED_VERSION (update mode)"
+else
+  echo "==> Installed version : (none) — fresh install mode"
+fi
+echo "==> Project name      : $PROJECT_NAME"
+echo "==> Mainline          : $MAINLINE"
+[[ "$DRY_RUN" -eq 1 ]] && echo "==> DRY RUN — no files will be written"
+echo ""
+
+# --- Helpers -------------------------------------------------------------------
+copy_file() {  # copy_file SRC DST   — creates parent dirs as needed
   local src="$1" dst="$2"
-  # Copy contents (not the dir itself) preserving structure.
-  # rsync isn't always available; use cp -R with trailing /.
-  cp -R "$src"/. "$dst"/
+  mkdir -p "$(dirname "$dst")"
+  cp "$src" "$dst"
 }
 
-echo "==> Copying skills/ agents/ commands/ hooks/"
-copy_tree "$PACK_DIR/skills"   "$CLAUDE_DIR/skills"
-copy_tree "$PACK_DIR/agents"   "$CLAUDE_DIR/agents"
-copy_tree "$PACK_DIR/commands" "$CLAUDE_DIR/commands"
-copy_tree "$PACK_DIR/hooks"    "$CLAUDE_DIR/hooks"
+ensure_gitignore_line() {
+  local line="$1"
+  local gi="$TARGET/.gitignore"
+  if [[ -f "$gi" ]] && grep -Fxq "$line" "$gi"; then return 0; fi
+  if [[ ! -f "$gi" ]]; then : > "$gi"; fi
+  if ! grep -q '# added by devkit install.sh' "$gi" 2>/dev/null; then
+    { echo ""; echo "# added by devkit install.sh"; } >> "$gi"
+  fi
+  echo "$line" >> "$gi"
+  echo "    + .gitignore: $line"
+}
 
-# Don't ship the JSON fragment in the installed tree; it's an install-time artifact.
-rm -f "$CLAUDE_DIR/hooks/settings.json.fragment"
-
-# --- 2. Set hook executable bit ------------------------------------------------
-HOOK="$CLAUDE_DIR/hooks/doc-drift-detector.py"
-if [[ -f "$HOOK" ]]; then
-  chmod +x "$HOOK"
-  echo "==> Marked hook executable: $HOOK"
-else
-  echo "warn: hook not found at $HOOK (skipping chmod)" >&2
-fi
-
-# --- 3. Merge settings.json ----------------------------------------------------
-SETTINGS="$CLAUDE_DIR/settings.json"
-FRAGMENT="$PACK_DIR/hooks/settings.json.fragment"
-
-if [[ ! -f "$FRAGMENT" ]]; then
-  echo "error: settings fragment missing at $FRAGMENT" >&2
-  exit 1
-fi
-
-if [[ ! -f "$SETTINGS" ]]; then
-  echo "==> Creating .claude/settings.json from fragment"
-  cp "$FRAGMENT" "$SETTINGS"
-else
-  echo "==> Merging fragment into existing .claude/settings.json"
-  # Use python3 for a non-destructive merge. The fragment only adds a
-  # PostToolUse hook entry; if an equivalent entry already exists (same
-  # command), we skip it to keep installs idempotent.
-  python3 - "$SETTINGS" "$FRAGMENT" <<'PY'
+# Merge settings.json fragment into existing settings, or create from fragment.
+install_or_merge_settings() {
+  local settings="$CLAUDE_DIR/settings.json"
+  local fragment="$PACK_DIR/hooks/settings.json.fragment"
+  if [[ ! -f "$settings" ]]; then
+    copy_file "$fragment" "$settings"
+    echo "    + .claude/settings.json (created from fragment)"
+    return 0
+  fi
+  python3 - "$settings" "$fragment" <<'PY'
 import json, sys, pathlib
-
 settings_path = pathlib.Path(sys.argv[1])
 fragment_path = pathlib.Path(sys.argv[2])
-
 settings = json.loads(settings_path.read_text())
 fragment = json.loads(fragment_path.read_text())
-
-# Walk fragment.hooks.<event>[] and add any entries not already present in
-# settings.hooks.<event>[]. Identity is the (matcher, hook command) pair so
-# re-runs don't duplicate.
-def hook_id(matcher_entry):
-    cmds = tuple(
-        (h.get("type"), h.get("command"))
-        for h in matcher_entry.get("hooks", [])
-    )
-    return (matcher_entry.get("matcher"), cmds)
-
+def hook_id(entry):
+    cmds = tuple((h.get("type"), h.get("command")) for h in entry.get("hooks", []))
+    return (entry.get("matcher"), cmds)
+changed = False
 settings.setdefault("hooks", {})
 for event, entries in fragment.get("hooks", {}).items():
     existing = settings["hooks"].setdefault(event, [])
     existing_ids = {hook_id(e) for e in existing}
     for entry in entries:
         if hook_id(entry) not in existing_ids:
-            existing.append(entry)
-
-settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+            existing.append(entry); changed = True
+if changed:
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 PY
-fi
-
-# --- 4. Stamp state.md.template if missing -------------------------------------
-STATE="$CLAUDE_DIR/state.md"
-if [[ -f "$STATE" ]]; then
-  echo "==> .claude/state.md already exists; leaving untouched"
-else
-  echo "==> Creating .claude/state.md from template"
-  # Substitute the mainline branch into the template's "Active branch" line.
-  sed "s|^\*\*Active branch:\*\* main$|**Active branch:** $MAINLINE|" \
-      "$PACK_DIR/state.md.template" > "$STATE"
-fi
-
-# --- 5. Stamp CLAUDE.md.template if missing ------------------------------------
-CLAUDE_MD="$TARGET/CLAUDE.md"
-TEMPLATE="$PACK_DIR/CLAUDE.md.template"
-
-if [[ -f "$CLAUDE_MD" ]]; then
-  cat >&2 <<EOF
-==> CLAUDE.md already exists at $CLAUDE_MD; leaving untouched.
-    Review pack/CLAUDE.md.template and merge its 'Memory layout',
-    'Workflow commands', 'Commit cadence', and 'Automated guards'
-    sections into your existing CLAUDE.md by hand.
-EOF
-else
-  echo "==> Creating CLAUDE.md from template"
-  # Slot-fill {{PROJECT_NAME}} and {{ONE_LINE_PROJECT_DESCRIPTION}}; leave
-  # {{LIST_PROJECT_CONVENTIONS_HERE}} as a placeholder for the user to fill in.
-  # Escape `&`, `|`, and `\` in user-supplied values before passing to sed.
-  esc() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
-  sed -e "s|{{PROJECT_NAME}}|$(esc "$PROJECT_NAME")|g" \
-      -e "s|{{ONE_LINE_PROJECT_DESCRIPTION}}|$(esc "$DESCRIPTION")|g" \
-      "$TEMPLATE" > "$CLAUDE_MD"
-fi
-
-# --- 6. Ensure .gitignore covers Python build artifacts ------------------------
-GITIGNORE="$TARGET/.gitignore"
-ensure_gitignore_line() {
-  local line="$1"
-  if [[ -f "$GITIGNORE" ]] && grep -Fxq "$line" "$GITIGNORE"; then
-    return 0
-  fi
-  if [[ ! -f "$GITIGNORE" ]]; then
-    : > "$GITIGNORE"
-  fi
-  # Add a separator comment the first time we touch it for the devkit pack.
-  if ! grep -q '# added by devkit install.sh' "$GITIGNORE" 2>/dev/null; then
-    {
-      echo ""
-      echo "# added by devkit install.sh"
-    } >> "$GITIGNORE"
-  fi
-  echo "$line" >> "$GITIGNORE"
-  echo "==> Added '$line' to .gitignore"
+  echo "    ~ .claude/settings.json (hook entries merged if missing)"
 }
 
+# Stamp CLAUDE.md.template into target/CLAUDE.md with slot-fills.
+stamp_claude_md() {
+  local template="$PACK_DIR/CLAUDE.md.template"
+  local out="$TARGET/CLAUDE.md"
+  local esc_name esc_desc
+  esc_name="$(printf '%s' "$PROJECT_NAME" | sed -e 's/[&|\\]/\\&/g')"
+  esc_desc="$(printf '%s' "$DESCRIPTION"  | sed -e 's/[&|\\]/\\&/g')"
+  sed -e "s|{{PROJECT_NAME}}|$esc_name|g" \
+      -e "s|{{ONE_LINE_PROJECT_DESCRIPTION}}|$esc_desc|g" \
+      "$template" > "$out"
+}
+
+# Stamp state.md.template into target/.claude/state.md with mainline slot.
+stamp_state_md() {
+  local template="$PACK_DIR/state.md.template"
+  local out="$CLAUDE_DIR/state.md"
+  sed "s|^\*\*Active branch:\*\* main$|**Active branch:** $MAINLINE|" "$template" > "$out"
+}
+
+# Set hook executable bit.
+mark_hook_exec() {
+  local hook="$CLAUDE_DIR/hooks/doc-drift-detector.py"
+  [[ -f "$hook" ]] && chmod +x "$hook"
+}
+
+# --- Compute plan (both modes) -------------------------------------------------
+# For fresh install the plan is mostly "NEW" entries; for update it's mixed.
+PLAN="$(python3 "$LIB" plan "$PACK_DIR" "$TARGET" "$MANIFEST" "$PACK_VERSION")"
+
+# --- Categorize plan -----------------------------------------------------------
+# Pre-init as empty arrays (set -u + bash 3.2 trips on `declare -a` alone).
+FILES_UPDATE=(); FILES_SKIP=(); FILES_NEW=(); FILES_UNCHANGED=()
+TEMPLATES_CHANGED=(); TEMPLATES_UNCHANGED=()
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  verb="${line%% *}"
+  payload="${line#* }"
+  case "$verb" in
+    UPDATE)             FILES_UPDATE+=("$payload") ;;
+    SKIP)               FILES_SKIP+=("$payload") ;;
+    NEW)                FILES_NEW+=("$payload") ;;
+    UNCHANGED)          FILES_UNCHANGED+=("$payload") ;;
+    TEMPLATE-CHANGED)   TEMPLATES_CHANGED+=("$payload") ;;
+    TEMPLATE-UNCHANGED) TEMPLATES_UNCHANGED+=("$payload") ;;
+  esac
+done <<< "$PLAN"
+
+print_count() {
+  local label="$1" count="$2"
+  printf "    %-12s %d\n" "$label" "$count"
+}
+
+echo "Plan summary:"
+print_count "update"    "${#FILES_UPDATE[@]}"
+print_count "new"       "${#FILES_NEW[@]}"
+print_count "skip"      "${#FILES_SKIP[@]}"
+print_count "unchanged" "${#FILES_UNCHANGED[@]}"
+echo ""
+
+if [[ ${#FILES_NEW[@]} -gt 0 ]]; then
+  echo "  New files:"; for f in "${FILES_NEW[@]}"; do echo "    + $f"; done; echo ""
+fi
+if [[ ${#FILES_UPDATE[@]} -gt 0 ]]; then
+  echo "  Updates:";   for f in "${FILES_UPDATE[@]}"; do echo "    ~ $f"; done; echo ""
+fi
+if [[ ${#FILES_SKIP[@]} -gt 0 ]]; then
+  if [[ "$FORCE" -eq 1 ]]; then
+    echo "  Force-overwriting locally-modified files (backed up to .devkit-bak/):"
+    for f in "${FILES_SKIP[@]}"; do echo "    ! $f"; done; echo ""
+  else
+    echo "  Locally-modified — will be SKIPPED (pass --force to overwrite):"
+    for f in "${FILES_SKIP[@]}"; do echo "    - $f"; done; echo ""
+  fi
+fi
+
+# Template advisories
+if [[ "$MODE" == "update" && ${#TEMPLATES_CHANGED[@]} -gt 0 ]]; then
+  for t in "${TEMPLATES_CHANGED[@]}"; do
+    case "$t" in
+      CLAUDE.md.template)
+        cat <<EOF
+  ! CLAUDE.md.template changed between installed and current pack version.
+    Your CLAUDE.md is not auto-modified. To review what's new:
+      diff $TARGET/CLAUDE.md $PACK_DIR/CLAUDE.md.template
+    Merge any new sections into your CLAUDE.md by hand.
+
+EOF
+        ;;
+      state.md.template)
+        cat <<EOF
+  ! state.md.template changed; your .claude/state.md is not auto-modified
+    (it's your active working pointer). Compare manually if curious:
+      diff $CLAUDE_DIR/state.md $PACK_DIR/state.md.template
+
+EOF
+        ;;
+    esac
+  done
+fi
+
+# --- Bail out on dry run -------------------------------------------------------
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "==> Dry run complete; no files written."
+  exit 0
+fi
+
+# --- Update-mode confirmation --------------------------------------------------
+# Skip the prompt if nothing meaningful would change (only unchanged + templates).
+need_confirm=0
+[[ ${#FILES_UPDATE[@]} -gt 0 ]] && need_confirm=1
+[[ ${#FILES_NEW[@]}    -gt 0 ]] && need_confirm=1
+[[ "$FORCE" -eq 1 && ${#FILES_SKIP[@]} -gt 0 ]] && need_confirm=1
+
+if [[ "$MODE" == "update" && "$need_confirm" -eq 1 ]]; then
+  read -r -p "Proceed with update? [y/N] " ans
+  case "$ans" in
+    y|Y|yes|YES) ;;
+    *) echo "==> Aborted by user."; exit 0 ;;
+  esac
+fi
+
+# --- Apply ---------------------------------------------------------------------
+mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/hooks"
+
+# Helper: pack-relative path for a given .claude-relative target path.
+# (Both share the same suffix after the .claude/ prefix, e.g.
+#  .claude/skills/engineer/SKILL.md -> skills/engineer/SKILL.md in pack/)
+pack_path_for() { echo "${1#.claude/}"; }
+
+BAK_DIR="$CLAUDE_DIR/.devkit-bak"
+
+write_one() {  # write_one TARGET_REL_PATH [backup-original?]
+  local rel="$1" backup="${2:-0}"
+  local pack_rel; pack_rel="$(pack_path_for "$rel")"
+  local src="$PACK_DIR/$pack_rel"
+  local dst="$TARGET/$rel"
+  if [[ "$backup" -eq 1 && -f "$dst" ]]; then
+    local bak="$BAK_DIR/$rel.$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$(dirname "$bak")"
+    cp "$dst" "$bak"
+    echo "    ! backed up to ${bak#$TARGET/}"
+  fi
+  copy_file "$src" "$dst"
+}
+
+if [[ ${#FILES_NEW[@]}    -gt 0 ]]; then for rel in "${FILES_NEW[@]}";    do write_one "$rel" 0; done; fi
+if [[ ${#FILES_UPDATE[@]} -gt 0 ]]; then for rel in "${FILES_UPDATE[@]}"; do write_one "$rel" 0; done; fi
+if [[ "$FORCE" -eq 1 && ${#FILES_SKIP[@]} -gt 0 ]]; then
+  for rel in "${FILES_SKIP[@]}"; do write_one "$rel" 1; done
+fi
+
+# These steps run on both modes; they're individually idempotent.
+mark_hook_exec
+install_or_merge_settings
+
+# state.md: only stamp on fresh install (never clobber an active working pointer).
+if [[ ! -f "$CLAUDE_DIR/state.md" ]]; then
+  stamp_state_md
+  echo "    + .claude/state.md (stamped from template)"
+fi
+
+# CLAUDE.md: only stamp on fresh install. On update, the template advisory above
+# tells the user to diff and merge by hand.
+CLAUDE_MD_CREATED=0
+if [[ ! -f "$TARGET/CLAUDE.md" ]]; then
+  stamp_claude_md
+  CLAUDE_MD_CREATED=1
+  echo "    + CLAUDE.md (stamped from template)"
+fi
+
+# .gitignore
 ensure_gitignore_line "__pycache__/"
 ensure_gitignore_line "*.pyc"
 
+# --- Write manifest + version stamp --------------------------------------------
+python3 "$LIB" manifest-write "$PACK_DIR" "$TARGET" "$MANIFEST" "$PACK_VERSION"
+printf '%s\n' "$PACK_VERSION" > "$VERSION_STAMP"
+
 # --- Done ----------------------------------------------------------------------
 echo ""
-echo "==> Install complete."
+if [[ "$MODE" == "update" ]]; then
+  echo "==> Update complete. Now at devkit $PACK_VERSION."
+else
+  echo "==> Install complete. devkit $PACK_VERSION."
+fi
+
 echo ""
 echo "Next steps:"
 step=1
-if [[ -f "$CLAUDE_MD" ]]; then
-  # Only emit the slot-fill reminders if we either created the CLAUDE.md just
-  # now OR the slots still appear in the file (defensive check for re-runs).
-  if grep -q '{{LIST_PROJECT_CONVENTIONS_HERE}}' "$CLAUDE_MD" 2>/dev/null; then
+if [[ "$CLAUDE_MD_CREATED" -eq 1 ]]; then
+  if grep -q '{{LIST_PROJECT_CONVENTIONS_HERE}}' "$TARGET/CLAUDE.md" 2>/dev/null; then
     echo "  $step. Open CLAUDE.md and fill the {{LIST_PROJECT_CONVENTIONS_HERE}} slot with"
     echo "     your project's load-bearing conventions (language, test runner, framework,"
     echo "     style rules)."
     step=$((step + 1))
   fi
-  if [[ "$DESCRIPTION_FILLED" -eq 0 ]] && grep -Fq "$DESCRIPTION_PLACEHOLDER" "$CLAUDE_MD" 2>/dev/null; then
+  if [[ "$DESCRIPTION_FILLED" -eq 0 ]] && grep -Fq "$DESCRIPTION_PLACEHOLDER" "$TARGET/CLAUDE.md" 2>/dev/null; then
     echo "  $step. Replace the placeholder description on line 3 of CLAUDE.md with a"
     echo "     real one-line description (or re-run install with --description \"...\")."
     step=$((step + 1))
   fi
 fi
+if [[ "$MODE" == "update" && ${#TEMPLATES_CHANGED[@]} -gt 0 ]]; then
+  echo "  $step. Review the template diff(s) flagged above and merge into your"
+  echo "     CLAUDE.md by hand."
+  step=$((step + 1))
+fi
 echo "  $step. Restart Claude Code so it picks up the new .claude/ contents."
 step=$((step + 1))
-echo "  $step. Run /feature-start \"<short description>\" to begin your first feature."
+if [[ "$MODE" == "fresh" ]]; then
+  echo "  $step. Run /feature-start \"<short description>\" to begin your first feature."
+fi
 echo ""
 echo "See README.md for the full workflow and docs/design/ for the rationale."

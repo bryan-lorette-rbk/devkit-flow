@@ -62,10 +62,12 @@ Per the "What 'done' looks like for this project" criteria (below), two items re
 1. **Slice-7 dogfood validation.** The new commit-discipline edits (A–E) have not been exercised against a real `/build` invocation. Natural test: install slice-7 pack into a target via `./install.sh` and run a small feature end-to-end. Should produce per-step commit proposals at the end of each `/build` Verify.
 2. **`pack/CLAUDE.md.template`** has not been validated by a fresh install into a *non-chungar* target. Only second-project use confirms the template stands on its own.
 
-**Done in this pass:**
+**Done in Thread A:**
 
-- ✓ **`install.sh`** (root). Idempotent bash script with python3-via-heredoc for the JSON merge. Flags: `--project-name`, `--description`, `--mainline`. Smoke-tested across three scenarios (fresh, re-run idempotency, no-description placeholder).
-- ✓ **`README.md`** (root). Single entry point: status caveats, requirements, install + manual fallback, components map, end-to-end workflow walkthrough, memory layout, three disciplines, uninstall, pointer to design docs.
+- ✓ **`install.sh`** (root). Idempotent bash script with python3-via-heredoc for the `settings.json` merge. Flags: `--project-name`, `--description`, `--mainline`, `--force`, `--dry-run`. Smoke-tested across three scenarios (fresh, re-run idempotency, no-description placeholder).
+- ✓ **`README.md`** (root). Single entry point: status caveats, requirements, install, **update path**, manual fallback, components map, end-to-end workflow walkthrough, memory layout, three disciplines, uninstall, pointer to design docs.
+
+**Slice 8 (update path, applied 2026-06-09):** Added a version-stamped manifest + per-file plan computation so re-running `install.sh` on an existing target switches to update mode rather than blindly overwriting. New files: `VERSION` (pack version, currently `0.7.0`), `install_lib.py` (manifest read/write + plan computation in python). `install.sh` extended with mode detection, plan-driven copy, customization detection (default-skip, `--force` to overwrite with backup to `.devkit-bak/`), template-change advisories for `CLAUDE.md.template` and `state.md.template`, and `--dry-run`. The manifest correctness rule was the subtle one: manifest entries record "what hash did we install for this file?" — set to pack hash only when target matches pack (we agree); preserved from prior manifest otherwise. Recording the *target* hash unconditionally would silently bless user customizations as "installed by us" and cause the next update to overwrite them. Bug surfaced + fixed during smoke test. Smoke-validated across an 8-step lifecycle: fresh install → customize a target file → bump pack version + edit pack file → default update (UPDATE pm, SKIP engineer) → bump again → default update (still SKIP, no silent overwrite) → `--force` update (overwrite + backup) → template-change advisory.
 
 **Forward-references carried from slices 6–7** (no action required for pack completion; tracked in slice validation reports):
 

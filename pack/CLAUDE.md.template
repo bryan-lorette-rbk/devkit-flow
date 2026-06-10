@@ -85,3 +85,4 @@ Fill in the things a fresh Claude Code session would otherwise have to infer: la
 2. Read the active spec it points at.
 3. If still unclear, read the relevant `docs/domains/<domain>.md`.
 4. Surface ambiguity rather than guessing.
+

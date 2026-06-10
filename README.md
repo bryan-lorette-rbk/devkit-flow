@@ -35,10 +35,12 @@ Flags:
 - `--project-name NAME` — fills `{{PROJECT_NAME}}` in `CLAUDE.md` (default: target dir basename).
 - `--description TEXT` — fills `{{ONE_LINE_PROJECT_DESCRIPTION}}` (default: a placeholder you're prompted to edit).
 - `--mainline BRANCH` — overrides auto-detected default branch.
+- `--force` — in update mode, overwrite locally-modified files (with backup).
+- `--dry-run` — show the plan and exit without writing.
 
-Target dir defaults to the current directory if omitted. The script is idempotent — running it twice is safe.
+Target dir defaults to the current directory if omitted. The script is idempotent — re-running it on an already-installed target switches to update mode (see below).
 
-### What `install.sh` does
+### What `install.sh` does (fresh install)
 
 1. Copies `pack/{skills,agents,commands,hooks}/*` into `<target>/.claude/`.
 2. Sets the executable bit on `.claude/hooks/doc-drift-detector.py`.
@@ -46,12 +48,35 @@ Target dir defaults to the current directory if omitted. The script is idempoten
 4. Copies `pack/state.md.template` to `<target>/.claude/state.md` — **only if missing** (won't clobber an active project state).
 5. Stamps `pack/CLAUDE.md.template` into `<target>/CLAUDE.md` with `{{PROJECT_NAME}}` and `{{ONE_LINE_PROJECT_DESCRIPTION}}` filled — **only if missing** (warns you to merge by hand otherwise).
 6. Appends `__pycache__/` and `*.pyc` to `<target>/.gitignore` if absent.
+7. Writes `<target>/.claude/.devkit-manifest.json` (file hashes for future-update planning) and `<target>/.claude/.devkit-version`.
 
 After install, edit `CLAUDE.md`'s `{{LIST_PROJECT_CONVENTIONS_HERE}}` slot with your project's load-bearing conventions (language + version, test runner, framework, style rules, branch naming).
 
+### Updating to a new pack version
+
+When the pack moves to a new version, re-run the install script against the same target:
+
+```bash
+cd /path/to/devkit && git pull
+./install.sh /path/to/your/project --project-name "your-project"
+```
+
+The installer detects the existing `.devkit-manifest.json` and switches to **update mode**: it computes a per-file plan, shows you a summary (counts + new/updated/skipped lists), then asks for confirmation before writing.
+
+| Plan verb | Meaning | Default action |
+|---|---|---|
+| `UPDATE`    | File exists in target; matches what we installed; safe to overwrite with new pack version. | overwrite |
+| `NEW`       | File doesn't exist in target (added in this pack version). | install |
+| `SKIP`      | File exists in target but differs from what we installed — you customized it. | leave alone (pass `--force` to overwrite, with backup to `.claude/.devkit-bak/`) |
+| `UNCHANGED` | Target file already matches the new pack — no-op. | nothing |
+
+Templates (`CLAUDE.md.template`, `state.md.template`) are **never auto-overwritten**. If they changed between your installed version and the current pack, the installer surfaces an advisory with a `diff` command you can run to see what's new, then you merge by hand.
+
+Use `--dry-run` first if you want to see exactly what would change before committing.
+
 ### Manual install fallback
 
-If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*`, and `pack/commands/*` into the target's `.claude/` subdirectories; copy `pack/hooks/doc-drift-detector.py` to `.claude/hooks/` and `chmod +x` it; create or merge `.claude/settings.json` from `pack/hooks/settings.json.fragment`; copy `pack/state.md.template` to `.claude/state.md`; and start `CLAUDE.md` from `pack/CLAUDE.md.template`.
+If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*`, and `pack/commands/*` into the target's `.claude/` subdirectories; copy `pack/hooks/doc-drift-detector.py` to `.claude/hooks/` and `chmod +x` it; create or merge `.claude/settings.json` from `pack/hooks/settings.json.fragment`; copy `pack/state.md.template` to `.claude/state.md`; and start `CLAUDE.md` from `pack/CLAUDE.md.template`. Skipping the manifest is fine; you just lose customization detection on future updates.
 
 ## What you get
 
