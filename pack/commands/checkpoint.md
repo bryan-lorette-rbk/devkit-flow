@@ -17,7 +17,7 @@ Argument shape is heuristic; if ambiguous, ask the user before assuming.
 ## Preconditions
 
 1. Read `.claude/state.md`.
-2. Verify: `Active feature` is not `none`. If there is no active feature, surface that and stop — there's nothing to checkpoint against. (Exception: a no-args invocation can still propose to amend `CLAUDE.md` or the memory layout itself, but that's an unusual case; confirm with the user before proceeding.)
+2. Verify: `Active feature` is not `none`. If there is no active feature, surface that and stop — there's nothing to checkpoint against. (Exception: a no-args invocation can still propose to amend `CLAUDE.md` (project conventions) or `.claude/devkit-orientation.md` (pack-owned memory layout — rare, see the documenter skill for the cross-feature blast-radius note), but that's an unusual case; confirm with the user before proceeding.)
 3. Working tree may have uncommitted changes; `/checkpoint` reads the diff to inform the proposal but does not stage or commit anything itself. Amendment commits are a separate user action after the documenter applies edits.
 
 If preconditions pass, load the `documenter` skill and proceed to the right phase based on argument shape.

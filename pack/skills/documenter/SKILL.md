@@ -36,7 +36,8 @@ The pack's memory layout has each document owning a different facet of project m
 | `docs/summaries/<feature>.md` | Feature retrospective (one per merged feature) | Authored at `/feature-merge`; amended only to add late-discovered context within a couple of days of merge | After "soon after merge" passes, the summary is history; further commentary belongs in the next feature's spec |
 | `docs/domains/<domain>.md` | Living domain model: vocabulary, bounded contexts, ubiquitous language | When a feature adds, renames, or shifts a domain concept | Adding implementation details (those belong in the spec/plan or in code comments) |
 | `.claude/state.md` | Working pointer: active feature/branch/phase/spec/plan, Open questions, Parked features | Continuously (Phase + Next step are routine); substantively when transitioning lifecycle (park, resume, etc.) | n/a — state.md is always live |
-| `CLAUDE.md` | Project conventions + memory-layout index | Rarely. When the memory layout itself changes, or a project convention shifts | Per-feature notes (those go in the spec/plan/summary) |
+| `CLAUDE.md` | Project-specific conventions | Rarely. When a project convention shifts (test runner, style rules, branch naming, etc.) | Per-feature notes (those go in the spec/plan/summary); pack-owned memory-layout content (that lives in `.claude/devkit-orientation.md` and is pack-managed) |
+| `.claude/devkit-orientation.md` | Pack-owned memory layout, workflow commands, commit cadence, automated guards | Almost never — this file is pack-owned and overwritten by the devkit installer. Edit only if you're customizing the pack itself; otherwise change to pack templates flow back via update | Project-specific anything (that goes in CLAUDE.md) |
 
 When an amendment touches more than one document, **list them all in the proposal**. A scope change typically touches the spec (the change) and the plan (a new step or test); a project convention change typically touches CLAUDE.md and the next plan's conventions section. Missing the cross-document update is the most common amendment failure mode.
 
@@ -189,7 +190,7 @@ Some amendments are large enough that `/checkpoint` is the wrong tool:
 - **The change is so substantial the feature is now a different feature.** If your proposal would rewrite Problem and Scope, the right call is to ask: should this be a new feature (`/feature-start <new-name>`) with the current one parked? Don't amend a spec into something its title no longer describes.
 - **The change requires architect input.** If the amendment introduces a project-first cross-cutting pattern (see the pm skill's "When to invoke the architect" section), pause the amendment and recommend the architect be invoked first. Apply the amendment only after the architect's recommendation is in hand.
 - **The change conflicts with an accepted ADR.** Flag the conflict. Either the ADR needs superseding (write a new ADR) or the amendment needs to change to comply with the ADR. Don't quietly amend the spec into ADR violation.
-- **The change touches CLAUDE.md or memory layout.** Both are higher-leverage than per-feature docs; propose, but surface that the change has cross-feature blast radius and confirm explicitly.
+- **The change touches CLAUDE.md, `.claude/devkit-orientation.md`, or the memory layout itself.** All three are higher-leverage than per-feature docs; propose, but surface that the change has cross-feature blast radius and confirm explicitly. Note that `.claude/devkit-orientation.md` is pack-owned — edits to it survive only until the next `install.sh` update unless they're upstreamed into the devkit repo itself.
 
 ## What you must not do
 

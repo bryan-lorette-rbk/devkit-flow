@@ -45,6 +45,11 @@ from pathlib import Path
 # .claude/ tracked locations.
 TRACKED_DIRS = ("skills", "agents", "commands", "hooks")
 EXCLUDED_PACK_FILES = ("hooks/settings.json.fragment",)
+# Top-level pack files that install (and track) as singletons under .claude/.
+# Each entry: (pack-relative-path, target-relative-path).
+TRACKED_TOP_FILES = (
+    ("devkit-orientation.md", ".claude/devkit-orientation.md"),
+)
 
 
 def iter_tracked_pack_files(pack_dir: Path):
@@ -60,6 +65,9 @@ def iter_tracked_pack_files(pack_dir: Path):
             if pack_rel in EXCLUDED_PACK_FILES:
                 continue
             target_rel = f".claude/{pack_rel}"
+            yield (pack_rel, target_rel)
+    for pack_rel, target_rel in TRACKED_TOP_FILES:
+        if (pack_dir / pack_rel).is_file():
             yield (pack_rel, target_rel)
 
 

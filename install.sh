@@ -31,6 +31,22 @@
 
 set -euo pipefail
 
+# --- Sanity: must run under bash ----------------------------------------------
+# The shebang invokes bash when this file is executed directly, but it can be
+# bypassed by `zsh install.sh`, `sh install.sh`, or sourcing from a non-bash
+# shell. Fail fast and clearly if that happened — several constructs below
+# (parameter-prompt `read -p`, `local`, set -u semantics) differ between bash
+# and other shells, and a partial run would leave the target in a confusing
+# state.
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "error: install.sh must be run under bash." >&2
+  echo "       Detected non-bash shell (perhaps zsh, sh, or sourced from one)." >&2
+  echo "       Run as:  bash install.sh [TARGET_DIR] [flags]" >&2
+  echo "                ./install.sh [TARGET_DIR] [flags]   (uses the shebang)" >&2
+  echo "       Do NOT use: source ./install.sh, . install.sh, zsh install.sh" >&2
+  exit 1
+fi
+
 # --- Locate the pack relative to this script -----------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACK_DIR="$SCRIPT_DIR/pack"
@@ -306,7 +322,10 @@ need_confirm=0
 [[ "$FORCE" -eq 1 && ${#FILES_SKIP[@]} -gt 0 ]] && need_confirm=1
 
 if [[ "$MODE" == "update" && "$need_confirm" -eq 1 ]]; then
-  read -r -p "Proceed with update? [y/N] " ans
+  # Portable prompt: `read -p` is bash-only; printing the prompt explicitly
+  # works under any POSIX-ish shell that happens to invoke this script.
+  printf 'Proceed with update? [y/N] '
+  read -r ans
   case "$ans" in
     y|Y|yes|YES) ;;
     *) echo "==> Aborted by user."; exit 0 ;;
@@ -353,13 +372,51 @@ if [[ ! -f "$CLAUDE_DIR/state.md" ]]; then
   echo "    + .claude/state.md (stamped from template)"
 fi
 
-# CLAUDE.md: only stamp on fresh install. On update, the template advisory above
-# tells the user to diff and merge by hand.
+# CLAUDE.md handling. The pack's bulky orientation content lives in
+# .claude/devkit-orientation.md (pack-owned, auto-updated). CLAUDE.md only
+# needs a one-line reference to that file so Claude Code reads it when loading
+# project memory. Three cases:
+#   (a) fresh install, no CLAUDE.md       → stamp the slim template.
+#   (b) fresh install, CLAUDE.md exists,
+#       reference already present         → nothing to do.
+#   (c) fresh install, CLAUDE.md exists,
+#       reference missing                 → propose appending one line; ask.
+# On update (manifest exists), CLAUDE.md is never touched here — the
+# TEMPLATE-CHANGED advisory above tells the user to diff and merge if needed.
+ORIENTATION_REF_LINE='> **devkit pack:** see `.claude/devkit-orientation.md` for the pack'\''s workflow commands, memory layout, commit cadence, and automated guards.'
+
 CLAUDE_MD_CREATED=0
+CLAUDE_MD_NEEDS_REFERENCE=0
 if [[ ! -f "$TARGET/CLAUDE.md" ]]; then
   stamp_claude_md
   CLAUDE_MD_CREATED=1
   echo "    + CLAUDE.md (stamped from template)"
+elif [[ "$MODE" == "fresh" ]]; then
+  if grep -Fq ".claude/devkit-orientation.md" "$TARGET/CLAUDE.md"; then
+    echo "    = CLAUDE.md already references .claude/devkit-orientation.md; leaving untouched."
+  else
+    cat <<EOF
+
+  ! CLAUDE.md already exists at $TARGET/CLAUDE.md.
+    The devkit pack needs this one line somewhere in CLAUDE.md so the
+    orientation file is read when Claude Code loads project memory:
+
+      $ORIENTATION_REF_LINE
+
+EOF
+    printf '  Append it to the end of CLAUDE.md now? [Y/n] '
+    read -r ans
+    case "$ans" in
+      n|N|no|NO)
+        CLAUDE_MD_NEEDS_REFERENCE=1
+        echo "  Skipped. Add the line above to CLAUDE.md by hand before /feature-start."
+        ;;
+      *)
+        printf '\n%s\n' "$ORIENTATION_REF_LINE" >> "$TARGET/CLAUDE.md"
+        echo "    + appended orientation reference to CLAUDE.md."
+        ;;
+    esac
+  fi
 fi
 
 # .gitignore
@@ -397,6 +454,12 @@ fi
 if [[ "$MODE" == "update" && ${#TEMPLATES_CHANGED[@]} -gt 0 ]]; then
   echo "  $step. Review the template diff(s) flagged above and merge into your"
   echo "     CLAUDE.md by hand."
+  step=$((step + 1))
+fi
+if [[ "$CLAUDE_MD_NEEDS_REFERENCE" -eq 1 ]]; then
+  echo "  $step. Add the devkit-orientation reference line to CLAUDE.md (you"
+  echo "     declined the auto-append). The line is shown above; place it"
+  echo "     anywhere in CLAUDE.md."
   step=$((step + 1))
 fi
 echo "  $step. Restart Claude Code so it picks up the new .claude/ contents."

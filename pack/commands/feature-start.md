@@ -42,6 +42,8 @@ If the framing confirmation surfaces a misunderstanding, restate and reconfirm. 
 
 PM skill runs the brainstorm-to-spec dialogue with the user (see the skill for the dialogue pattern). The brainstorm is visible and interactive; this command does not interfere with it.
 
+Load the `grill-me` skill at the start of this phase. Its discipline (walk the decision tree parents-before-children, explore the codebase before asking, recommend an answer per question, reflect each answer back) applies to every brainstorm question — the spec-as-contract demands it.
+
 If a question arises that warrants the `architect` subagent, invoke it in fresh context (see "Invoking the architect" below). When the architect returns, reflect the recommendation back to the user before accepting it.
 
 ### Phase C — Decomposition

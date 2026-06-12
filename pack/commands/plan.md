@@ -26,6 +26,8 @@ If preconditions pass, continue. State.md's `Phase` may be `spec-approved` (clea
 
 Load the `pm` skill (for plan-time behaviors: research, acceptance mapping, cross-cutting pattern check) and the `engineer` skill (for plan-time behaviors: step ordering, step shape, tester contract). Both skills' "Plan-time behaviors" sections are the source of truth for the discipline; this command sequences the phases and handles side-effects (file writes, state.md updates, ADR persistence).
 
+Also load the `grill-me` skill. `/plan` is mostly automatic — research and decomposition don't require user dialogue when the spec is decisive. But when research surfaces a user-facing decision the spec didn't pin (library choice, framework idiom, a project-first the architect won't catch), apply the grilling discipline: codebase-explore before asking, walk parents before children, recommend an answer per question, reflect each answer back.
+
 ### Phase A — Orient
 
 Read, in this order:

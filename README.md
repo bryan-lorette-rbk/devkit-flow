@@ -43,14 +43,35 @@ Target dir defaults to the current directory if omitted. The script is idempoten
 ### What `install.sh` does (fresh install)
 
 1. Copies `pack/{skills,agents,commands,hooks}/*` into `<target>/.claude/`.
-2. Sets the executable bit on `.claude/hooks/doc-drift-detector.py`.
-3. Merges `pack/hooks/settings.json.fragment` into `<target>/.claude/settings.json` (creates it if missing; otherwise appends the hook entry without duplicating).
-4. Copies `pack/state.md.template` to `<target>/.claude/state.md` — **only if missing** (won't clobber an active project state).
-5. Stamps `pack/CLAUDE.md.template` into `<target>/CLAUDE.md` with `{{PROJECT_NAME}}` and `{{ONE_LINE_PROJECT_DESCRIPTION}}` filled — **only if missing** (warns you to merge by hand otherwise).
-6. Appends `__pycache__/` and `*.pyc` to `<target>/.gitignore` if absent.
-7. Writes `<target>/.claude/.devkit-manifest.json` (file hashes for future-update planning) and `<target>/.claude/.devkit-version`.
+2. Copies `pack/devkit-orientation.md` into `<target>/.claude/devkit-orientation.md` (pack-owned reference doc; see below).
+3. Sets the executable bit on `.claude/hooks/doc-drift-detector.py`.
+4. Merges `pack/hooks/settings.json.fragment` into `<target>/.claude/settings.json` (creates it if missing; otherwise appends the hook entry without duplicating).
+5. Copies `pack/state.md.template` to `<target>/.claude/state.md` — **only if missing** (won't clobber an active project state).
+6. Handles `<target>/CLAUDE.md` (see the next subsection for the three cases).
+7. Appends `__pycache__/` and `*.pyc` to `<target>/.gitignore` if absent.
+8. Writes `<target>/.claude/.devkit-manifest.json` (file hashes for future-update planning) and `<target>/.claude/.devkit-version`.
 
 After install, edit `CLAUDE.md`'s `{{LIST_PROJECT_CONVENTIONS_HERE}}` slot with your project's load-bearing conventions (language + version, test runner, framework, style rules, branch naming).
+
+### How `CLAUDE.md` is handled
+
+The pack's bulky orientation content (workflow commands, memory layout, commit cadence, automated guards) lives in **`.claude/devkit-orientation.md`** — a pack-owned file that updates with each pack version. `CLAUDE.md` itself stays small and project-owned, and only needs a one-line reference to the orientation file so Claude Code loads it during memory orient.
+
+The installer handles three cases on fresh install:
+
+| Case | Behavior |
+|---|---|
+| No existing `CLAUDE.md` | Stamp the slim `CLAUDE.md.template` (title + description + conventions slot + orientation reference + "when in doubt" pointer). |
+| Existing `CLAUDE.md`, reference already present | Leave untouched. |
+| Existing `CLAUDE.md`, reference missing | Print the recommended one-line reference and **ask** whether to append it to the end of your `CLAUDE.md`. Accept ⇒ appended. Decline ⇒ left alone with a next-steps reminder to add it manually. |
+
+The reference line itself:
+
+```markdown
+> **devkit pack:** see `.claude/devkit-orientation.md` for the pack's workflow commands, memory layout, commit cadence, and automated guards.
+```
+
+Future pack updates rewrite `.claude/devkit-orientation.md` automatically (with customization detection — see the update mode section below). Your `CLAUDE.md` is never re-touched after install.
 
 ### Updating to a new pack version
 
@@ -86,7 +107,8 @@ If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*
 | **Subagents** (`pack/agents/`) | `architect` (fresh-context architectural recommendations + ADR drafts), `tester` (fresh-context red-phase test authoring), `security-reviewer` (fresh-context security pass at merge) |
 | **Slash commands** (`pack/commands/`) | `/feature-start`, `/plan`, `/build`, `/checkpoint`, `/feature-merge` — one per workflow lifecycle phase |
 | **Hook** (`pack/hooks/`) | `doc-drift-detector.py` — `PostToolUse` warning when an edit touches files outside the active feature's `owned_files` glob |
-| **CLAUDE.md template** | Memory layout, workflow commands, commit cadence, automated guards — the project-level orientation the pack expects |
+| **Orientation doc** (`pack/devkit-orientation.md`) | Pack-owned reference: memory layout, workflow commands, commit cadence, automated guards. Installs to `.claude/devkit-orientation.md`; auto-updated; referenced from your `CLAUDE.md`. |
+| **CLAUDE.md template** | Project-side: title, description, project-specific conventions slot, "when in doubt" pointer + one-line reference to the orientation doc. Slim — most pack content lives in the orientation doc, not here. |
 
 ## Workflow walkthrough
 
