@@ -19,7 +19,7 @@ If a question can be answered from those four docs, answer it from those four do
 
 **Subagents (3):** `architect`, `tester`, `security-reviewer` — each gets fresh context because isolation is load-bearing for what they do.
 
-**Skills (3):** `engineer`, `documenter`, `pm` — instructions the main thread follows; no isolated context needed.
+**Skills (4):** `engineer`, `documenter`, `pm`, `grill-me` — instructions the main thread follows; no isolated context needed.
 
 **Slash commands (5):** `/feature-start`, `/plan`, `/build`, `/checkpoint`, `/feature-merge`.
 
@@ -27,61 +27,56 @@ If a question can be answered from those four docs, answer it from those four do
 
 **Memory layout:** `docs/` for durable human-first artifacts (specs, plans, ADRs, domains, summaries) + `.claude/state.md` as the machine-first working pointer.
 
-## Current build status
+## Status
 
-**All six core slices are complete and dogfood-validated; slice 7 (commit-discipline polish pass) is applied but not yet dogfood-validated.** Remaining work is documentation/scripting + slice-7 validation — see "Pack-completion work outstanding" below.
+History lives in git + `docs/validation/`. This section describes the pack as it stands and what's left to validate.
 
-**Dogfood target:** `chungar` (Google ADK + LiteLLM personal-assistant agent at `/Users/bryanlorette/Code/rubrik-chungarsih-agent`).
+### Shipped
 
-**Slice 6 (closeout and gate):** Authored `pack/agents/security-reviewer.md` (fresh-context security pass with 13 categories + 5 severity buckets + structured output format), `pack/commands/feature-merge.md` (three sequential gates: tests → docs reconciliation → security review, then summary authoring + supersede + merge proposal with explicit user confirmation), and extended `pack/skills/documenter/SKILL.md` with the "Summary authoring" subsection. Dogfooded end-to-end on chungar's `feature/notes-write-and-delete`. See `docs/validation/slice-6.md`.
+- **Subagents:** `architect`, `tester`, `security-reviewer`
+- **Skills:** `engineer`, `documenter`, `pm`, `grill-me`
+- **Slash commands:** `/feature-start`, `/plan`, `/build`, `/checkpoint`, `/feature-merge`
+- **Hook:** `doc-drift-detector` (`PostToolUse`; warns on edits outside the active spec's `owned_files`)
+- **Templates:** `pack/CLAUDE.md.template` (slim — defers orientation to a separate installed file), `pack/state.md.template`
+- **Pack orientation:** `pack/devkit-orientation.md` (memory layout, workflow commands, commit cadence, automated guards)
+- **Installer:** `install.sh` + `install_lib.py`. Idempotent. Manifest-based update path with customization detection, default-skip on user-modified files, `--force` overwrite with backup to `.devkit-bak/`, template-change advisories, `--dry-run`. Flags: `--project-name`, `--description`, `--mainline`, `--force`, `--dry-run`.
+- **README** (root): install / update path / components map / end-to-end walkthrough / memory layout / disciplines / uninstall.
 
-**Slice 7 (commit-discipline polish, applied 2026-06-09):** Surfaced by the chungar follow-up feature `notes-write-and-delete-services-and-tools`, which ran through the pack with no commit-discipline guidance and landed all 5 build steps + spec + plan in a single 1,878-line mega-commit (`c81bda0`). Root cause: pre-slice-7 pack had zero mentions of "commit" anywhere in engineer skill, `/build`, `/feature-start`, `/plan`, or `CLAUDE.md.template`; `/checkpoint` explicitly said "do not commit." Five surgical edits applied: (A) engineer skill — new Verify substep 5 "Commit the step" + Karpathy "Reversible = git revert test" rewrite; (B) `/build` — "After the step" rewritten to defer-and-reinforce engineer substep + halt condition for stage failure + stale Phase-idle / "slice 1" comment cleaned up; (C) `/feature-start` Phase H and `/plan` Phase G — commit-and-handoff stage with subject/body shape + halt condition; (D) `/checkpoint` — "do not commit" replaced with propose-then-easy-decline; (E) `CLAUDE.md.template` — new "Commit cadence" section with full-feature commit table + "stage explicitly, propose never silent" rules. **Not yet dogfood-validated** — chungar's next feature is the validation opportunity.
+### Dogfood state (chungar)
 
-**What exists (full pack):**
-- Design docs (`docs/design/`)
-- `pack/` — six core slices + slice-7 polish edits:
-  - Slice 1: `pack/skills/engineer/SKILL.md`, `pack/agents/tester.md`, `pack/commands/build.md`, `pack/CLAUDE.md.template`, `pack/state.md.template`
-  - Slice 2: `pack/skills/pm/SKILL.md`, `pack/agents/architect.md`, `pack/commands/feature-start.md`
-  - Slice 3: extensions to `pm` and `engineer` skills (plan-time behaviors), `pack/commands/plan.md`
-  - Slice 4: `pack/skills/documenter/SKILL.md`, `pack/commands/checkpoint.md`; minor extensions to `pm` + `engineer` skills + `CLAUDE.md.template` + `state.md.template`
-  - Slice 5: `pack/hooks/doc-drift-detector.py`, `pack/hooks/settings.json.fragment`; `owned_files` guidance in pm skill; "Automated guards" in `CLAUDE.md.template`
-  - Slice 6: `pack/agents/security-reviewer.md`, `pack/commands/feature-merge.md`; "Summary authoring" subsection in documenter skill
-  - Slice 7: edits A–E above; touches `engineer/SKILL.md`, `build.md`, `feature-start.md`, `plan.md`, `checkpoint.md`, `CLAUDE.md.template`
-- Validation reports: `docs/validation/slice-1.md` through `slice-6.md` (slice-7 report pending dogfood)
-- Authoring notes: `docs/authoring-notes/spec-and-plan-depth.md`
-- Chungar dogfood state:
-  - `master` carries the merged `notes-write-and-delete` feature (commit `e899a28`, merged 2026-06-05) plus full slice-1-through-slice-6 pack install (slice-7 edits not yet propagated to chungar's `.claude/`).
-  - `feature/notes-write-and-delete-services-and-tools` — Thread B follow-up; 5 steps built (NoteQueryService, NoteWriteService, SqliteNoteRepository, tools.py, agent wiring); 101 tests passing; spec + plan approved; state.md Phase `building`; entire feature in one commit `c81bda0` (the slice-7 trigger). Ready for `/feature-merge` whenever you want to close it out.
-  - `feature/notes-read-and-search` — **superseded** by `notes-write-and-delete`; branch retained per supersede mechanic.
-  - Summary: `docs/summaries/notes-write-and-delete.md`. First-of-domain doc: `docs/domains/notes.md`.
+Target: `chungar` (Google ADK + LiteLLM personal-assistant agent at `/Users/bryanlorette/Code/rubrik-chungarsih-agent`).
 
-## Pack-completion work outstanding
+- **`master`:** merged `notes-write-and-delete` feature (commit `e899a28`, 2026-06-05). Pack install present but stale — does not yet include commit-discipline edits, update-path machinery, CLAUDE.md split, or `grill-me`.
+- **`feature/notes-write-and-delete-services-and-tools`:** in-flight follow-up. 5 build steps + spec + plan complete (NoteQueryService, NoteWriteService, SqliteNoteRepository, tools.py, agent wiring); 101 tests passing; entire feature in one commit `c81bda0` (the gap that triggered the commit-discipline pass). Ready for `/feature-merge`.
+- **`feature/notes-read-and-search`:** superseded by `notes-write-and-delete`; retained per supersede mechanic.
+- Summary doc: `docs/summaries/notes-write-and-delete.md`. First-of-domain doc: `docs/domains/notes.md`.
 
-Per the "What 'done' looks like for this project" criteria (below), two items remain after slice 7 + Thread A:
+### Validated end-to-end
 
-1. **Slice-7 dogfood validation.** The new commit-discipline edits (A–E) have not been exercised against a real `/build` invocation. Natural test: install slice-7 pack into a target via `./install.sh` and run a small feature end-to-end. Should produce per-step commit proposals at the end of each `/build` Verify.
-2. **`pack/CLAUDE.md.template`** has not been validated by a fresh install into a *non-chungar* target. Only second-project use confirms the template stands on its own.
+- Brainstorm → spec → branch → plan → build → checkpoint → security review → summary → merge proposal on a real feature.
+- Installer 8-step lifecycle: fresh → customize → bump → default update → bump again → default update → `--force` update → template-change.
+- CLAUDE.md split across 5 install paths: fresh+no-CLAUDE.md, fresh+existing-no-ref+accept, fresh+existing-no-ref+decline, fresh+existing-with-ref, update from a simulated old-style install.
 
-**Done in Thread A:**
+### Outstanding
 
-- ✓ **`install.sh`** (root). Idempotent bash script with python3-via-heredoc for the `settings.json` merge. Flags: `--project-name`, `--description`, `--mainline`, `--force`, `--dry-run`. Smoke-tested across three scenarios (fresh, re-run idempotency, no-description placeholder).
-- ✓ **`README.md`** (root). Single entry point: status caveats, requirements, install, **update path**, manual fallback, components map, end-to-end workflow walkthrough, memory layout, three disciplines, uninstall, pointer to design docs.
+**Not yet dogfood-validated:**
 
-**Slice 8 (update path, applied 2026-06-09):** Added a version-stamped manifest + per-file plan computation so re-running `install.sh` on an existing target switches to update mode rather than blindly overwriting. New files: `VERSION`, `install_lib.py`. `install.sh` extended with mode detection, plan-driven copy, customization detection (default-skip, `--force` to overwrite with backup to `.devkit-bak/`), template-change advisories, and `--dry-run`. Subtle correctness rule: manifest entries record "what hash did *we* install" — set to pack hash only when target matches pack; preserved from prior manifest otherwise. Recording target hash unconditionally would silently bless user customizations. Smoke-validated across an 8-step lifecycle (fresh → customize → bump → default update → bump again → default update → --force update → template-change).
+- **Commit-discipline edits** (engineer skill Verify substep 5, `/build` halt condition, `/feature-start` Phase H, `/plan` Phase G, `/checkpoint` propose-then-decline, `CLAUDE.md.template` commit-cadence section). Validates the next time a real `/build` runs against an updated install.
+- **`grill-me` skill** and its `/feature-start` Phase B + `/plan` Run-section auto-invocation. Validates on chungar's next brainstorm.
+- **`pack/CLAUDE.md.template`** on a non-chungar target. Second-project install is the only honest test that it stands on its own.
 
-**Slice 9 (CLAUDE.md split, applied 2026-06-12):** Refactored to separate project-owned and pack-owned content. The bulky orientation sections (Memory layout, Workflow commands, Commit cadence, Automated guards) moved from `pack/CLAUDE.md.template` into a new `pack/devkit-orientation.md` that installs to `.claude/devkit-orientation.md` and is tracked in the manifest (full UPDATE/SKIP/NEW treatment — pack updates flow through automatically). `CLAUDE.md.template` shrank from 88 lines to 27 — title, description, slim "How to read this project" with an explicit blockquote reference to the orientation file, project conventions slot, "When in doubt" pointer. `install_lib.py` added `TRACKED_TOP_FILES` for singleton pack files outside the four tracked dirs. `install.sh`'s existing-CLAUDE.md branch now detects whether the orientation reference is present (grep) and, if absent, prompts the user to auto-append a one-line reference — closes the previous "merge 80 lines into existing CLAUDE.md" pothole down to "approve a one-line append." Pack-side references to specific CLAUDE.md sections (memory-layout) repointed to the orientation file: `documenter/SKILL.md` (×2), `commands/checkpoint.md` (×1). VERSION bumped to `0.8.0` (minor — meaningful pack-shape change). Smoke-validated across 5 paths: fresh + no CLAUDE.md, fresh + existing-no-ref + accept, fresh + existing-no-ref + decline, fresh + existing-with-ref, update from a simulated v0.7.0-style install (orientation correctly classified as NEW). All green.
+**Polish items** (forward-referenced from prior validation reports):
 
-**Forward-references carried from slices 6–7** (no action required for pack completion; tracked in slice validation reports):
+- **documenter skill** — clarify multi-doc merge-time scenario in the cardinal-discipline section.
+- **`/feature-merge`** — tighten "no uncommitted changes" vs "untracked files" precondition wording; elevate the merge-strategy fallback to a named subsection.
+- **Package-manifest commit surfacing in `/feature-merge` summary** — implemented but never exercised (chungar's first merge had no `pyproject.toml` changes).
+- **`/checkpoint` Pattern C (park)** — never exercised.
+- **`/checkpoint` stale language** — the "slice-5 hook (when shipped)" framing on lines 96 and 98 is now historical (hook is shipped); needs a one-line cleanup.
 
-- **Documentation pass polish items (from slice 6):**
-  - Documenter skill's cardinal-discipline section — clarify multi-doc merge-time scenario (Finding 5).
-  - `/feature-merge` precondition wording — tighten the "no uncommitted changes" vs "untracked files" ambiguity (Finding 7).
-  - `/feature-merge` merge-strategy fallback — elevate to a named subsection in the command spec (Finding 6).
-- **Mechanism not yet exercised:** package-manifest commit surfacing in `/feature-merge` summary (slice-5 forward-reference; chungar's slice-6 dogfood had no `pyproject.toml` changes to test it against).
-- **`/checkpoint` Pattern C (park)** still unexercised. Should land the next time a real park surfaces.
-- **Stale `/checkpoint` language:** the "slice-5 hook (when shipped)" framing on lines 96 and 98 is now historical (hook is shipped). Worth a one-line cleanup pass.
+**Natural next dogfood.** Re-run `install.sh` against chungar's `.claude/` (picks up commit-discipline + update path + CLAUDE.md split + `grill-me`), then either:
 
-**Natural next dogfood:** propagate slice-7 edits into chungar's `.claude/`, then either (a) run `/feature-merge` on the in-progress `feature/notes-write-and-delete-services-and-tools` to exercise the gate trio + slice-6 polish items + slice-7 `/checkpoint` commit proposal, or (b) start a small new feature on chungar (e.g., the deferred `add ruff + mypy + pre-commit` follow-up) to exercise slice-7 edit-A end-to-end at `/build` time.
+- (a) `/feature-merge` on `feature/notes-write-and-delete-services-and-tools` to exercise the gate trio + the polish items + `/checkpoint` commit proposal, or
+- (b) start a small new feature on chungar (e.g., the deferred `add ruff + mypy + pre-commit` follow-up) to exercise commit-discipline + grilling end-to-end.
 
 ## Working principles for this project
 
@@ -89,7 +84,7 @@ These are non-negotiable for the *authoring work*, not just the eventual pack:
 
 1. **Native-first.** Use Claude Code's actual primitives (subagents, skills, slash commands, hooks, CLAUDE.md) before inventing anything new. If a problem can be solved by a built-in mechanism, that's the answer. The pack exists to compose primitives, not replace them.
 
-2. **Dogfood after every slice.** Each of the six slices is independently usable. After completing a slice, validate it on a real feature in a real project before moving on. Do not author slice N+1 until slice N has survived contact with reality.
+2. **Dogfood every meaningful addition.** Each pack component is independently usable. After adding or changing a component, validate it on a real feature in a real project before moving on. Don't author the next thing until the current one has survived contact with reality.
 
 3. **Design docs are the contract.** If implementation diverges from the design docs, one of two things must happen before continuing: (a) update the design doc to reflect the new decision (with rationale), or (b) revert the implementation to match the design. Do not allow silent divergence. This is the same doc-currency discipline the pack itself will eventually enforce — practice it during authoring.
 
@@ -112,13 +107,15 @@ These are non-negotiable for the *authoring work*, not just the eventual pack:
 │   │   ├── walkthrough.md
 │   │   └── inventory-and-build-order.md
 │   ├── authoring-notes/            (decisions made during authoring)
-│   └── validation/                 (dogfood reports per slice)
+│   └── validation/                 (dogfood reports)
 ├── pack/                           (the skill-pack itself, the actual deliverable)
 │   ├── CLAUDE.md.template          (the CLAUDE.md that ships with the pack)
+│   ├── devkit-orientation.md       (installs to .claude/; pack-owned orientation)
 │   ├── skills/
 │   │   ├── engineer/SKILL.md
 │   │   ├── documenter/SKILL.md
-│   │   └── pm/SKILL.md
+│   │   ├── pm/SKILL.md
+│   │   └── grill-me/SKILL.md
 │   ├── agents/
 │   │   ├── architect.md
 │   │   ├── tester.md
@@ -130,7 +127,8 @@ These are non-negotiable for the *authoring work*, not just the eventual pack:
 │   │   ├── checkpoint.md
 │   │   └── feature-merge.md
 │   └── hooks/
-│       └── doc-drift-detector.sh   (or .js, .py — TBD when authoring slice 5)
+│       ├── doc-drift-detector.py
+│       └── settings.json.fragment
 └── examples/                       (fabricated example projects used for dogfood)
 ```
 
@@ -140,7 +138,7 @@ The split between `docs/` and `pack/` is deliberate: `docs/` is about the projec
 
 - Design docs in `docs/design/` are versioned by edit, not by filename. Change history goes in git, not in `-v2.md` filenames.
 - Authoring notes capture *why a skill was written this way* when the reasoning isn't obvious from the skill itself. They're not required for every skill — only for non-obvious choices.
-- Validation reports document what happened during dogfooding: what worked, what didn't, what changed in the pack as a result. One per slice.
+- Validation reports document what happened during dogfooding: what worked, what didn't, what changed in the pack as a result.
 
 ## Conventions for the pack itself (`pack/`)
 
@@ -161,8 +159,8 @@ Where Claude Code's primitives are ambiguous or evolving, document the choice in
 
 ## What "done" looks like for this project
 
-- All six slices completed and validated
-- Pack has been used end-to-end on at least one real feature beyond dogfood
+- All shipped pack components dogfood-validated on a real feature
+- Pack has been used end-to-end on at least one real feature beyond chungar (second-project install)
 - The pack's own CLAUDE.md template (`pack/CLAUDE.md.template`) is written and tested
 - README in this project explains how to install the pack into a target project
 
