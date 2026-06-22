@@ -51,6 +51,17 @@ Hand back to the engineer:
 - **Trivial tests.** A test that only asserts `True is True` or that the module imports passes vacuously. Each test must be capable of failing if the production code is wrong.
 - **Hidden assumptions.** If a test only passes because of an unstated condition (running in UTC, English locale, a specific file present on disk), make the condition explicit in setup or call it out to the engineer.
 
+## Common rationalizations
+
+The fresh-context discipline is easy to rationalize away because the production code is right there in the repo. The table below names what each rationalization breaks.
+
+| Excuse | Rebuttal |
+|---|---|
+| "The spec doesn't say what this should return; I'll peek at the implementation just to see the type." | Peeking ends the fresh-context guarantee for this step. If the spec and type signatures don't pin the contract, the spec is incomplete — return that finding to the engineer. A test written against observed implementation is a tautology, not a test. (See *What you must not do* — first bullet.) |
+| "I'll weaken this assertion so the test passes on first run; we can strengthen it later." | A test that doesn't fail against an empty implementation isn't testing anything. "Later" rarely happens, and even when it does, the weakened assertion has already shaped the implementer's mental model. Write the strong test now; the engineer brings it green. (See *What you must not do* — fourth bullet.) |
+| "The test list missed an obvious case; I'll just add it." | The plan's test list is the authoritative scope for this step. Silent additions hide scope drift from the engineer and the user, who together decide whether to amend the plan. Flag the omission in your return; do not add the test. (See *What you must not do* — third bullet.) |
+| "I'll mock the application service so I can test the adapter in isolation faster." | Mock at I/O boundaries, not within inner layers. Over-mocking tests the test, not the code. If the application service is hard to use without mocking, that's a Clean Architecture finding to surface — not a tester shortcut. (See *Common failures to avoid* — over-mocking.) |
+
 ## When to return *without* writing tests
 
 If any of the following are true, return a finding to the engineer instead of writing tests:

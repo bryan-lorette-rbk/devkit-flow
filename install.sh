@@ -12,6 +12,11 @@
 #   --mainline BRANCH       override auto-detected default branch (main / master)
 #   --force                 in update mode, overwrite locally-modified files (otherwise skipped)
 #   --dry-run               show the plan and exit without writing anything
+#   --claude-md-only        skip pack file install; only run the CLAUDE.md handling step
+#                           (re-prompt to add the orientation reference, with diff preview).
+#                           Use after declining the prompt at install or after a pack update
+#                           changed the template. For richer reconciliation, use the
+#                           /claude-md-merge slash command from a Claude Code session.
 #   --help / -h             show this help
 #
 # Modes:
@@ -75,6 +80,7 @@ DESCRIPTION=""
 MAINLINE=""
 FORCE=0
 DRY_RUN=0
+CLAUDE_MD_ONLY=0
 
 DESCRIPTION_PLACEHOLDER="(Add a one-line project description here.)"
 
@@ -90,8 +96,10 @@ while [[ $# -gt 0 ]]; do
       FORCE=1; shift ;;
     --dry-run)
       DRY_RUN=1; shift ;;
+    --claude-md-only)
+      CLAUDE_MD_ONLY=1; shift ;;
     --help|-h)
-      sed -n '2,32p' "$0"; exit 0 ;;
+      sed -n '2,35p' "$0"; exit 0 ;;
     -*)
       echo "error: unknown flag $1" >&2; exit 2 ;;
     *)
@@ -232,6 +240,102 @@ mark_hook_exec() {
   [[ -f "$hook" ]] && chmod +x "$hook"
 }
 
+# --- CLAUDE.md handling -------------------------------------------------------
+# The pack's bulky orientation content lives in .claude/devkit-orientation.md
+# (pack-owned, auto-updated). CLAUDE.md only needs a one-line reference to that
+# file so Claude Code reads it when loading project memory. Cases:
+#   (a) no CLAUDE.md       → stamp the slim template.
+#   (b) CLAUDE.md exists,
+#       reference present  → nothing to do.
+#   (c) CLAUDE.md exists,
+#       reference missing  → show diff preview, propose appending, ask.
+# Case (c) only fires on fresh install OR when --claude-md-only is set. On a
+# normal update with an existing CLAUDE.md, the TEMPLATE-CHANGED advisory in
+# the plan-summary block handles pack-template churn instead.
+ORIENTATION_REF_LINE='> **devkit pack:** see `.claude/devkit-orientation.md` for the pack'\''s workflow commands, memory layout, commit cadence, and automated guards.'
+
+CLAUDE_MD_CREATED=0
+CLAUDE_MD_NEEDS_REFERENCE=0
+
+handle_claude_md_step() {
+  if [[ ! -f "$TARGET/CLAUDE.md" ]]; then
+    stamp_claude_md
+    CLAUDE_MD_CREATED=1
+    echo "    + CLAUDE.md (stamped from template)"
+    return 0
+  fi
+
+  if [[ "$MODE" != "fresh" && "$CLAUDE_MD_ONLY" -eq 0 ]]; then
+    # Existing CLAUDE.md + normal update mode: don't re-nag every update.
+    # TEMPLATE-CHANGED advisory handles pack-template churn separately.
+    return 0
+  fi
+
+  if grep -Fq ".claude/devkit-orientation.md" "$TARGET/CLAUDE.md"; then
+    echo "    = CLAUDE.md already references .claude/devkit-orientation.md; leaving untouched."
+    return 0
+  fi
+
+  cat <<EOF
+
+  ! CLAUDE.md exists at $TARGET/CLAUDE.md and does not reference the orientation file.
+    The devkit pack needs this one line somewhere in CLAUDE.md so the
+    orientation file is read when Claude Code loads project memory:
+
+      $ORIENTATION_REF_LINE
+
+EOF
+
+  local preview_before preview_after
+  preview_before="$(mktemp)"
+  preview_after="$(mktemp)"
+  tail -3 "$TARGET/CLAUDE.md" > "$preview_before"
+  { tail -3 "$TARGET/CLAUDE.md"; echo ""; echo "$ORIENTATION_REF_LINE"; } > "$preview_after"
+  echo "  Proposed change (last 3 lines of CLAUDE.md, current vs after append):"
+  echo ""
+  # `diff` returns 1 when files differ — that's the expected case here; absorb it
+  # so `set -euo pipefail` doesn't kill the script on a successful preview.
+  { diff -u --label "CLAUDE.md (current)" --label "CLAUDE.md (after append)" \
+    "$preview_before" "$preview_after" 2>/dev/null || true; } | sed 's/^/    /'
+  echo ""
+  rm -f "$preview_before" "$preview_after"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "  (--dry-run: would prompt to append; not asking)"
+    return 0
+  fi
+
+  printf '  Append the reference to the end of CLAUDE.md now? [Y/n]\n'
+  printf '  (Decline and run /claude-md-merge in a Claude Code session for a\n'
+  printf '   structured section-by-section merge instead.) '
+  read -r ans
+  case "$ans" in
+    n|N|no|NO)
+      CLAUDE_MD_NEEDS_REFERENCE=1
+      echo "  Skipped. Add the reference by hand, or run /claude-md-merge for a structured merge."
+      ;;
+    *)
+      printf '\n%s\n' "$ORIENTATION_REF_LINE" >> "$TARGET/CLAUDE.md"
+      echo "    + appended orientation reference to CLAUDE.md."
+      ;;
+  esac
+}
+
+# --- --claude-md-only early exit ----------------------------------------------
+# When --claude-md-only is set, skip the full pack install plan and only run
+# the CLAUDE.md handling step. Useful for: re-prompting after a declined append,
+# re-merging after a template change, or one-off reconciliation. For richer
+# section-by-section reconciliation, the user runs /claude-md-merge from a
+# Claude Code session instead.
+if [[ "$CLAUDE_MD_ONLY" -eq 1 ]]; then
+  echo "==> --claude-md-only: skipping pack file install; running CLAUDE.md handling only."
+  echo ""
+  handle_claude_md_step
+  echo ""
+  echo "==> --claude-md-only complete."
+  exit 0
+fi
+
 # --- Compute plan (both modes) -------------------------------------------------
 # For fresh install the plan is mostly "NEW" entries; for update it's mixed.
 PLAN="$(python3 "$LIB" plan "$PACK_DIR" "$TARGET" "$MANIFEST" "$PACK_VERSION")"
@@ -290,9 +394,12 @@ if [[ "$MODE" == "update" && ${#TEMPLATES_CHANGED[@]} -gt 0 ]]; then
       CLAUDE.md.template)
         cat <<EOF
   ! CLAUDE.md.template changed between installed and current pack version.
-    Your CLAUDE.md is not auto-modified. To review what's new:
-      diff $TARGET/CLAUDE.md $PACK_DIR/CLAUDE.md.template
-    Merge any new sections into your CLAUDE.md by hand.
+    Your CLAUDE.md is not auto-modified. Two paths to reconcile:
+      (a) Run \`/claude-md-merge\` in a Claude Code session for a structured
+          section-by-section walk-through (handles renames, equivalence, partial
+          overlap — anything more than a one-line append).
+      (b) Manually diff and merge:
+            diff $TARGET/CLAUDE.md $PACK_DIR/CLAUDE.md.template
 
 EOF
         ;;
@@ -333,7 +440,7 @@ if [[ "$MODE" == "update" && "$need_confirm" -eq 1 ]]; then
 fi
 
 # --- Apply ---------------------------------------------------------------------
-mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/hooks"
+mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/references"
 
 # Helper: pack-relative path for a given .claude-relative target path.
 # (Both share the same suffix after the .claude/ prefix, e.g.
@@ -372,52 +479,9 @@ if [[ ! -f "$CLAUDE_DIR/state.md" ]]; then
   echo "    + .claude/state.md (stamped from template)"
 fi
 
-# CLAUDE.md handling. The pack's bulky orientation content lives in
-# .claude/devkit-orientation.md (pack-owned, auto-updated). CLAUDE.md only
-# needs a one-line reference to that file so Claude Code reads it when loading
-# project memory. Three cases:
-#   (a) fresh install, no CLAUDE.md       → stamp the slim template.
-#   (b) fresh install, CLAUDE.md exists,
-#       reference already present         → nothing to do.
-#   (c) fresh install, CLAUDE.md exists,
-#       reference missing                 → propose appending one line; ask.
-# On update (manifest exists), CLAUDE.md is never touched here — the
-# TEMPLATE-CHANGED advisory above tells the user to diff and merge if needed.
-ORIENTATION_REF_LINE='> **devkit pack:** see `.claude/devkit-orientation.md` for the pack'\''s workflow commands, memory layout, commit cadence, and automated guards.'
-
-CLAUDE_MD_CREATED=0
-CLAUDE_MD_NEEDS_REFERENCE=0
-if [[ ! -f "$TARGET/CLAUDE.md" ]]; then
-  stamp_claude_md
-  CLAUDE_MD_CREATED=1
-  echo "    + CLAUDE.md (stamped from template)"
-elif [[ "$MODE" == "fresh" ]]; then
-  if grep -Fq ".claude/devkit-orientation.md" "$TARGET/CLAUDE.md"; then
-    echo "    = CLAUDE.md already references .claude/devkit-orientation.md; leaving untouched."
-  else
-    cat <<EOF
-
-  ! CLAUDE.md already exists at $TARGET/CLAUDE.md.
-    The devkit pack needs this one line somewhere in CLAUDE.md so the
-    orientation file is read when Claude Code loads project memory:
-
-      $ORIENTATION_REF_LINE
-
-EOF
-    printf '  Append it to the end of CLAUDE.md now? [Y/n] '
-    read -r ans
-    case "$ans" in
-      n|N|no|NO)
-        CLAUDE_MD_NEEDS_REFERENCE=1
-        echo "  Skipped. Add the line above to CLAUDE.md by hand before /feature-start."
-        ;;
-      *)
-        printf '\n%s\n' "$ORIENTATION_REF_LINE" >> "$TARGET/CLAUDE.md"
-        echo "    + appended orientation reference to CLAUDE.md."
-        ;;
-    esac
-  fi
-fi
+# CLAUDE.md handling (see the function definition near the top of this script
+# for the case logic, the diff preview, and the --claude-md-only flag).
+handle_claude_md_step
 
 # .gitignore
 ensure_gitignore_line "__pycache__/"
@@ -465,7 +529,9 @@ fi
 echo "  $step. Restart Claude Code so it picks up the new .claude/ contents."
 step=$((step + 1))
 if [[ "$MODE" == "fresh" ]]; then
-  echo "  $step. Run /feature-start \"<short description>\" to begin your first feature."
+  echo "  $step. Existing codebase? Run /adopt first to build the baseline domain"
+  echo "     docs + CLAUDE.md conventions, then /feature-start \"<short description>\"."
+  echo "     Greenfield? Skip /adopt and go straight to /feature-start."
 fi
 echo ""
 echo "See README.md for the full workflow and docs/design/ for the rationale."

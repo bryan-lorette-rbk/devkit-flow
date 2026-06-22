@@ -32,7 +32,7 @@ The pack's memory layout has each document owning a different facet of project m
 |---|---|---|---|
 | `docs/specs/<feature>.md` | *What* we're building: scope, contracts, data model, error handling, acceptance criteria | Scope changes, contract changes, new acceptance criteria, requirements clarification | Implementation choices (those go in the plan) |
 | `docs/plans/<feature>.md` | *How* we're building it: steps, test lists, conventions, ordering | Step changes (add/remove/reorder), test-list updates, plan-time conventions changes, type-signature corrections | Behavioral changes (those need the spec amended first) |
-| `docs/adr/NNNN-*.md` | Irreversible architectural decisions | **Almost never.** ADRs are immutable once accepted. If a decision needs revisiting, write a new ADR that supersedes (with reference) | Wording cleanups, retroactive justification, anything that rewrites history |
+| `docs/adr/NNNN-*.md` | Irreversible architectural decisions | **Almost never.** ADRs are immutable once accepted. If a decision needs revisiting, write a new ADR that supersedes (with reference). For *when* a decision warrants an ADR in the first place, see the pm skill's *When to invoke the architect* quick-reference table | Wording cleanups, retroactive justification, anything that rewrites history |
 | `docs/summaries/<feature>.md` | Feature retrospective (one per merged feature) | Authored at `/feature-merge`; amended only to add late-discovered context within a couple of days of merge | After "soon after merge" passes, the summary is history; further commentary belongs in the next feature's spec |
 | `docs/domains/<domain>.md` | Living domain model: vocabulary, bounded contexts, ubiquitous language | When a feature adds, renames, or shifts a domain concept | Adding implementation details (those belong in the spec/plan or in code comments) |
 | `.claude/state.md` | Working pointer: active feature/branch/phase/spec/plan, Open questions, Parked features | Continuously (Phase + Next step are routine); substantively when transitioning lifecycle (park, resume, etc.) | n/a — state.md is always live |
@@ -199,6 +199,17 @@ Some amendments are large enough that `/checkpoint` is the wrong tool:
 - **Do not silently rename a feature.** A rename touches the spec filename, the plan filename, the branch name, state.md's Active feature, and every reference. Propose the whole sweep; do not do it piecemeal.
 - **Do not interpret silence as confirmation.** If the user doesn't respond to your proposal, ask before applying. Stale proposals are common in long sessions.
 - **Do not apply an amendment that contradicts the cardinal discipline.** If you find yourself reasoning "this edit is so small / so obvious that I'll just apply it," that's exactly the failure mode the discipline is there to prevent.
+
+## Common rationalizations
+
+The "propose before writing" discipline produces a round-trip per amendment. That cost is exactly when rationalizations appear.
+
+| Excuse | Rebuttal |
+|---|---|
+| "This edit is so small / so obvious that I'll just apply it." | This is the exact failure mode the cardinal discipline exists to prevent. A silent edit you got wrong can be invisible for weeks; one round-trip is cheap by comparison. Propose every time, even for one-liners. (See *The cardinal discipline*.) |
+| "The user didn't respond to my proposal, so they must be OK with it." | Stale proposals are common in long sessions. Silence is ambiguous; absence of objection is not consent. Ask before applying. (See *What you must not do* — fourth bullet.) |
+| "I'll rename this feature piecemeal — the spec filename now, branch and references later." | A feature rename is one operation touching the spec, plan, branch, state.md, and every reference. Piecemeal renames leave the project in a half-renamed state where future-you can't tell which name is canonical. Propose the whole sweep; do not do it in pieces. (See *What you must not do* — third bullet.) |
+| "The amendment is technically a different feature, but it's faster to amend the current spec than start a new one." | A rewrite of Problem and Scope means the feature changed identity. Park the current feature (or merge it as-is) and start the new one with `/feature-start <new-name>`. Don't quietly mutate a spec into something its title no longer describes. (See *When to escalate* — first bullet.) |
 
 ## How this skill plugs into the pack
 

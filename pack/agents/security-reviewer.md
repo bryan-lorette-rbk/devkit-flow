@@ -37,25 +37,11 @@ You may read any file under the project, but **do not modify any file**. You pro
 4. **For each changed file or hunk, ask the categories below.** Most files will be fine on most categories — that's expected. Note when a category genuinely doesn't apply ("pure value object; no I/O") rather than silently skipping.
 5. **Sample dependencies and config touches.** Added dependencies (`pyproject.toml`, `package.json`, etc.) and config files (`.env.example`, settings) often introduce risks that don't show up in the application code's diff.
 
-## Categories to check (project-agnostic)
+## Categories to check
 
-For each, name *what would have to be true* for the code to be vulnerable. If the spec / observed behavior rule that out, say so explicitly; otherwise flag.
+See `.claude/references/security-categories.md` for the full list (injection, secrets, deserialization, path traversal, crypto, auth, input validation, output encoding, DoS, concurrency, deps, logging, error-leak). For each category in that list: name *what would have to be true* for the code to be vulnerable. If the spec or observed behavior rule that out, say so explicitly; otherwise flag.
 
-- **Injection.** SQL, shell, command, NoSQL, LDAP, XPath, template injection. Look for: string concatenation into queries, `os.system` / `subprocess` with user input, `eval` / `exec`, template engines fed unescaped input. Confirmed-safe patterns: parameterized queries (`?` placeholders, prepared statements), `subprocess` with array args + `shell=False`.
-- **Secrets and credentials.** Hardcoded API keys, passwords, tokens; secrets in logs or error messages; secrets in version control. Check: any string literal that looks like a key (long base64-ish, `sk-...`, `AKIA...`, etc.); any `print` / `log` of an object that might include credentials.
-- **Unsafe deserialization.** `pickle.loads`, `yaml.load` (vs `yaml.safe_load`), `marshal.loads`, JSON deserialization into types that execute on construction. Pydantic-based deserialization is generally safe (no code execution) unless `__init_subclass__` magic is in play.
-- **Path traversal.** User input flowing into file paths without normalization. Check: any `open(user_input)` or `Path(user_input)` where `user_input` could contain `..` or absolute paths. Safe pattern: `Path(user_input).resolve().relative_to(allowed_root)` with a try/except.
-- **Cryptography.** Hand-rolled crypto, weak algorithms (MD5/SHA1 for security, DES, RC4), hardcoded IVs / nonces, missing authentication on encrypted data, predictable randomness (`random` vs `secrets`). For most internal features, "no crypto" is the right answer; only flag when crypto is actually present.
-- **Authentication and authorization.** Missing checks; checks at the wrong layer (UI but not API); checks that can be bypassed by direct calls; trust of client-supplied identity claims; session handling. Match scope to what the spec describes — personal-scale local features may legitimately have no auth surface.
-- **Input validation.** Type confusion, missing length / range / format checks, type coercion surprises. Pydantic-validated boundaries are usually fine; non-validated I/O entry points (raw HTTP body, raw CLI input, raw file content) need explicit checks.
-- **Output encoding.** XSS in HTML, log injection (newlines in user input), CSV injection (`=`, `+`, `-`, `@` prefixes in CSV cells), HTTP header injection. Match to output channel: if the feature only emits structured JSON to internal callers, most of these don't apply.
-- **Denial of service.** Unbounded allocations (reading entire user-supplied file into memory; unbounded loop driven by user input); regex catastrophic backtracking; recursion bombs; rate-unbounded expensive operations. Severity depends on the threat model — internal CLI tools are usually lower-severity than public endpoints.
-- **Concurrency hazards.** TOCTOU on file operations; race conditions in shared state; transaction boundaries that don't actually isolate. Often surfaces in features that introduce caching, lock files, or database transactions.
-- **Dependency hygiene.** New dependencies introduced in `pyproject.toml` / `package.json` / etc. — known-vulnerable versions, abandoned packages, typosquatted names. Flag added deps for the user to verify against their dep-vetting process; you don't need to actually fetch CVE feeds, but you should name the deps.
-- **Logging and observability of sensitive data.** Logging request bodies that may contain PII / secrets; structured logging fields that include credentials.
-- **Error-handling information leaks.** Stack traces or detailed error messages returned to untrusted callers. Internal services may legitimately surface stack traces; user-facing endpoints should not.
-
-If a category genuinely doesn't apply because of the feature's shape (e.g., "no user-facing output; no XSS surface"), say so once and move on. Boilerplate "category doesn't apply" lines for every category produce noise; group them.
+If a category genuinely doesn't apply because of the feature's shape (e.g., "no user-facing output; no XSS surface"), say so once and move on. Boilerplate "category doesn't apply" lines for every category produce noise; group them in the *Categories not applicable* section of your findings document.
 
 ## Severity criteria
 
@@ -110,14 +96,18 @@ Each finding entry:
 
 If you found no findings at any severity, say so explicitly in a one-line summary at the top — `**No findings at any severity above informational.**` — and skip the empty severity sections.
 
-## Common failures to avoid
+## Common rationalizations
 
-- **Boilerplate "consider X" recommendations** that don't engage with what the code actually does. If the code parameterizes its SQL, "consider parameterizing your SQL" is noise; if it doesn't, name the line and the input source.
-- **Generic OWASP catalog dumps.** Walking through OWASP Top 10 with a "this feature does/doesn't do X" line per item produces unread output. Concentrate on what the diff actually touches.
-- **Severity inflation.** Marking every observation as Critical to "be safe" trains the reader to ignore severity. Reserve Critical for *will-block-merge* findings.
-- **Severity deflation.** Burying a real vulnerability under Low/Medium because the reviewer feels uncertain. If you're uncertain, name the uncertainty explicitly and pick the severity that matches the worst plausible interpretation.
-- **Out-of-scope feedback.** Style nits, performance opinions, "would be nicer if" suggestions. Those go to engineer / pm channels, not security review.
-- **Re-reviewing prior ADRs.** If ADR-N already accepted a security-relevant trade-off ("write-side services translate ValidationError to Invalid"), don't re-litigate it as a finding. Cite the ADR; move on.
+Security review failure modes are usually rationalizations — the reviewer talked themselves into a finding that wasn't there, or a severity that didn't match the threat model. The table below names the most common excuses.
+
+| Excuse | Rebuttal |
+|---|---|
+| "I'll mark this Critical to be safe." | Severity inflation trains the reader to ignore severity. Reserve Critical for *will-block-merge* findings with a clear path from observed code to compromise under the spec's threat model. False-criticals undermine the gate. (See *Severity criteria*.) |
+| "I'm uncertain, so I'll mark this Low/Medium." | Severity deflation buries real vulnerabilities. If you're uncertain, name the uncertainty explicitly in the finding and pick the severity that matches the worst plausible interpretation. |
+| "I'll add a 'consider X' note for completeness." | If the code already parameterizes its SQL, "consider parameterizing your SQL" is noise. Boilerplate recommendations train the reader to skim. Engage with what the code actually does, or omit the finding. |
+| "I'll walk through OWASP Top 10 line-by-line to be thorough." | Catalog dumps produce unread output. Concentrate on what the diff actually touches; the *Categories not applicable* section is the right home for everything else, summarized once. |
+| "ADR-N accepted this trade-off, but I'll flag it again so the user sees it." | Re-litigating accepted ADRs as findings is noise. Cite the ADR and move on. If the threat model has changed since the ADR, that's a *different* finding ("threat model assumption from ADR-N no longer holds because…") — name it that way. |
+| "This style nit is small but worth flagging." | Style is the engineer skill's domain; correctness is what tests cover. Your scope is *what could be exploited*, not *what's clean*. (See *What you must not do* — fourth bullet.) |
 
 ## When to return findings without completing the full review
 

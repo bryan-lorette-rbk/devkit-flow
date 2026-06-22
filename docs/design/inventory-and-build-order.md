@@ -210,6 +210,25 @@ Full feature lifecycle from start to merge. The pack is complete.
 
 ---
 
+### Slice 7 — Brownfield adoption (post-core)
+
+Added after the six-slice core. The lifecycle that consumes the durable memory must exist and be validated before a command that *bootstraps* that memory can be dogfooded — so this is a post-core slice, alongside the other housekeeping command (`/claude-md-merge`), not part of the original six.
+
+**Build:**
+- `/adopt` command (`pack/commands/adopt.md`) — surveys conventions, discovers/confirms the domain map, writes baseline `docs/domains/` docs, opt-in ADRs. Orchestrates `documenter` (workhorse), the `pm` domain heuristic run in reverse, and `architect` (ambiguous boundaries only). No new skill or subagent.
+- `pm` skill research-phase edit — cite captured `CLAUDE.md` conventions instead of re-deriving.
+- `install.sh` closing-message pointer to `/adopt` for existing projects.
+- `devkit-orientation.md` Housekeeping-commands entry.
+
+**What you can do after this slice:**
+Install the pack into a mature project and reach the same "solid base" a greenfield project grows to — domain map, captured conventions, optional decision records — in one deliberate pass, before the first `/feature-start`.
+
+**Dogfood task:** Run `/adopt` on a real second project (not chungar). Verify: Phase A conventions carry `file:line` evidence; the proposed domain map is useful and correctable; domain docs are terse and accurate; no ADRs unless a decision is flagged; a subsequent `/feature-start` orients against the produced docs and `/plan` cites the captured conventions. Re-run and confirm idempotence (deltas, not duplicates). This run doubles as the standing "second-project install" validation.
+
+**Why slice 7 last:** Adoption only pays off if the lifecycle that reads the base exists and is validated. Building it earlier would mean dogfooding a base with nothing to read it. Full rationale and the resolved design forks: `docs/design/0002-brownfield-adoption.md`.
+
+---
+
 ## Build order rationale
 
 A different order was tempting: **start with `/feature-start`** because it's where the user enters the workflow. Rejected for two reasons:

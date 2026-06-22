@@ -37,12 +37,13 @@ Flags:
 - `--mainline BRANCH` — overrides auto-detected default branch.
 - `--force` — in update mode, overwrite locally-modified files (with backup).
 - `--dry-run` — show the plan and exit without writing.
+- `--claude-md-only` — skip the pack file install; only re-run the CLAUDE.md handling step (preview + Y/n prompt to add the orientation reference). For richer reconciliation — heading renames, semantic equivalence, partial overlap — use the `/claude-md-merge` slash command from a Claude Code session instead.
 
 Target dir defaults to the current directory if omitted. The script is idempotent — re-running it on an already-installed target switches to update mode (see below).
 
 ### What `install.sh` does (fresh install)
 
-1. Copies `pack/{skills,agents,commands,hooks}/*` into `<target>/.claude/`.
+1. Copies `pack/{skills,agents,commands,hooks,references}/*` into `<target>/.claude/`.
 2. Copies `pack/devkit-orientation.md` into `<target>/.claude/devkit-orientation.md` (pack-owned reference doc; see below).
 3. Sets the executable bit on `.claude/hooks/doc-drift-detector.py`.
 4. Merges `pack/hooks/settings.json.fragment` into `<target>/.claude/settings.json` (creates it if missing; otherwise appends the hook entry without duplicating).
@@ -63,7 +64,7 @@ The installer handles three cases on fresh install:
 |---|---|
 | No existing `CLAUDE.md` | Stamp the slim `CLAUDE.md.template` (title + description + conventions slot + orientation reference + "when in doubt" pointer). |
 | Existing `CLAUDE.md`, reference already present | Leave untouched. |
-| Existing `CLAUDE.md`, reference missing | Print the recommended one-line reference and **ask** whether to append it to the end of your `CLAUDE.md`. Accept ⇒ appended. Decline ⇒ left alone with a next-steps reminder to add it manually. |
+| Existing `CLAUDE.md`, reference missing | Print the recommended one-line reference, **show a diff-style preview** of the proposed append (last 3 lines, current vs after), and **ask** whether to append it to the end of your `CLAUDE.md`. Accept ⇒ appended. Decline ⇒ left alone; re-run later with `--claude-md-only`, or use `/claude-md-merge` (see below) for a structured section-by-section reconciliation. |
 
 The reference line itself:
 
@@ -72,6 +73,11 @@ The reference line itself:
 ```
 
 Future pack updates rewrite `.claude/devkit-orientation.md` automatically (with customization detection — see the update mode section below). Your `CLAUDE.md` is never re-touched after install.
+
+**Re-entering the CLAUDE.md step.** Two re-entry paths exist for any state beyond the simple "append one line at the bottom" case:
+
+- **`./install.sh /path/to/your/project --claude-md-only`** — re-runs only the CLAUDE.md handling. Same preview + Y/n prompt as fresh install. Useful for users who declined the prompt the first time, or for updates where the template gained content.
+- **`/claude-md-merge`** (Claude Code slash command, shipped with the pack) — the messy-case path. Walks the existing `CLAUDE.md` against the canonical structure (title, description, *How to read this project*, orientation reference, *Project conventions*, *When in doubt*); detects sections that are present, equivalent under a different heading, or partial; and proposes section-by-section merges following the documenter skill's *propose before writing* discipline. Idempotent. Use this when an existing `CLAUDE.md` has overlapping content the installer's append can't handle thoughtfully.
 
 ### Updating to a new pack version
 
@@ -97,7 +103,7 @@ Use `--dry-run` first if you want to see exactly what would change before commit
 
 ### Manual install fallback
 
-If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*`, and `pack/commands/*` into the target's `.claude/` subdirectories; copy `pack/hooks/doc-drift-detector.py` to `.claude/hooks/` and `chmod +x` it; create or merge `.claude/settings.json` from `pack/hooks/settings.json.fragment`; copy `pack/state.md.template` to `.claude/state.md`; and start `CLAUDE.md` from `pack/CLAUDE.md.template`. Skipping the manifest is fine; you just lose customization detection on future updates.
+If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*`, `pack/commands/*`, and `pack/references/*` into the target's `.claude/` subdirectories; copy `pack/hooks/doc-drift-detector.py` to `.claude/hooks/` and `chmod +x` it; create or merge `.claude/settings.json` from `pack/hooks/settings.json.fragment`; copy `pack/state.md.template` to `.claude/state.md`; and start `CLAUDE.md` from `pack/CLAUDE.md.template`. Skipping the manifest is fine; you just lose customization detection on future updates.
 
 ## What you get
 
@@ -106,9 +112,17 @@ If the script doesn't fit your environment, copy `pack/skills/*`, `pack/agents/*
 | **Skills** (`pack/skills/`) | `pm` (brainstorm-to-spec discipline + plan-time research), `engineer` (TDD loop + SOLID/Clean Arch + commit cadence), `documenter` (amends specs/plans/ADRs/state.md; authors summaries at merge) |
 | **Subagents** (`pack/agents/`) | `architect` (fresh-context architectural recommendations + ADR drafts), `tester` (fresh-context red-phase test authoring), `security-reviewer` (fresh-context security pass at merge) |
 | **Slash commands** (`pack/commands/`) | `/feature-start`, `/plan`, `/build`, `/checkpoint`, `/feature-merge` — one per workflow lifecycle phase |
+| **Housekeeping commands** (`pack/commands/`) | `/adopt` — bootstrap baseline memory (conventions + domain docs) when an existing codebase adopts the pack; `/claude-md-merge` — interactive reconciliation of an existing `CLAUDE.md` against the canonical devkit-compliant structure. Neither is gated on an active feature; both usable anytime. |
 | **Hook** (`pack/hooks/`) | `doc-drift-detector.py` — `PostToolUse` warning when an edit touches files outside the active feature's `owned_files` glob |
+| **References** (`pack/references/`) | On-demand checklists cited from skills (`solid-checklist.md`, `clean-architecture-layers.md`, `security-categories.md`). Not loaded automatically; opened when the skill that cites them points at them. |
 | **Orientation doc** (`pack/devkit-orientation.md`) | Pack-owned reference: memory layout, workflow commands, commit cadence, automated guards. Installs to `.claude/devkit-orientation.md`; auto-updated; referenced from your `CLAUDE.md`. |
 | **CLAUDE.md template** | Project-side: title, description, project-specific conventions slot, "when in doubt" pointer + one-line reference to the orientation doc. Slim — most pack content lives in the orientation doc, not here. |
+
+## Adopting the pack into an existing project
+
+On a greenfield project, durable memory grows feature by feature and you can go straight to `/feature-start`. On a **mature codebase**, that memory starts empty — and every orient phase in the pack (the `pm` skill's decomposition, `/plan`'s convention research, the `architect`'s contradiction check) expects it to exist. Bridge the gap once, after install:
+
+- **`/adopt [<area>]`** — surveys the repo's conventions into `CLAUDE.md`'s *Project conventions* (with cited `file:line` evidence), discovers and confirms the existing domain map with you, and writes terse `docs/domains/<domain>.md` baselines (each with an *as-built rationale* subsection). It writes ADRs only for decisions you flag as load-bearing *and* reversible — it does not manufacture retroactive ones. Propose-before-write throughout; `state.md` stays idle. It's incremental and idempotent: the first run documents the spine, re-runs propose only deltas, and an optional `<area>` scopes the pass to one subsystem. Run it before your first `/feature-start`; rationale in `docs/design/0002-brownfield-adoption.md`.
 
 ## Workflow walkthrough
 
@@ -123,6 +137,19 @@ A complete feature, end to end:
 7. **`/feature-merge`** — Three gates in fixed order: (1) full test suite green, (2) docs reconciliation + acceptance-criteria coverage, (3) `security-reviewer` subagent fresh-context pass. On success: `documenter` authors `docs/summaries/<slug>.md`, updates `docs/domains/<domain>.md` if applicable, marks any superseded parked features, then proposes the merge mechanics and waits for your explicit confirmation before any git history change.
 
 The full commit cadence is documented in `CLAUDE.md`'s "Commit cadence" section after install.
+
+If you're arriving from another framework that uses the more common six-phase lifecycle vocabulary, the mapping is:
+
+| Lifecycle phase | devkit command(s) |
+|---|---|
+| Define | `/feature-start` (brainstorm + spec draft) |
+| Plan | `/plan` |
+| Build | `/build` (one step per invocation) |
+| Verify | `/build` (per-step `tester` invocation + engineer's Verify substep) + `/checkpoint` (on-demand reconciliation) |
+| Review | `/feature-merge` Gate 2 (docs reconciliation) + Gate 3 (`security-reviewer` fresh-context pass) |
+| Ship | `/feature-merge` Gate 1 (tests green) + the merge proposal and mainline integration |
+
+devkit doesn't rename the commands to match the lifecycle — the command names *are* the workflow vocabulary the pack uses internally. The mapping is here to help orient, not to replace.
 
 ## Memory layout
 

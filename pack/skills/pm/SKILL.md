@@ -129,6 +129,19 @@ If the user asks for changes, apply them and present again. If the user surfaces
 
 ## When to invoke the architect
 
+Quick-reference table for the decision-doc triage. If the trigger fires, invoke the architect; the recommendation will name whether an ADR is warranted.
+
+| Trigger | Architect call? | Likely doc home |
+|---|---|---|
+| Brainstorm settles on one of two genuinely viable alternatives that will constrain future features | Yes | ADR |
+| Spec amendment would conflict with an undocumented prior commitment | Yes | ADR (or supersede an existing one) |
+| Feature establishes a cross-cutting pattern (validation, transactions, error handling, retry, auth, logging shape) for the first time | Yes | ADR |
+| New bounded context or layer being introduced | Yes | ADR |
+| Choice is "follow the convention already in place" | No | Plan's Conventions section (cite precedent) |
+| Routine implementation detail the spec doesn't constrain (which library, which algorithm in a normal spot) | No | Plan's Conventions or Project-firsts subsection |
+
+The existing prose below details each trigger, the cross-cutting patterns to watch for, and the rules for bundling vs separating multiple architect calls in one plan. The table is the quick scan; the prose is the authority.
+
 Invoke the `architect` subagent in fresh context when a brainstorm surfaces a question of one of these shapes:
 
 - **Bounded context.** "Should this be a new domain or an extension of an existing one?"
@@ -222,7 +235,9 @@ What "research" concretely means at plan time, in three buckets:
 
 **1. Repo conventions — observed, with cited evidence.**
 
-For every code-shape decision the plan will encode, find the existing precedent in the repo and cite it. Concretely:
+**Check `CLAUDE.md`'s `## Project conventions` first.** On a project that ran `/adopt`, the load-bearing conventions are already captured there with `file:line` evidence. When a convention the plan needs is already recorded, **cite the captured entry** rather than re-deriving it — re-research is wasted motion and risks contradicting what adoption settled. Research only what isn't captured yet. If research surfaces a genuinely new convention worth keeping, that's a `CLAUDE.md` amendment via `/checkpoint`, not just a plan-local note.
+
+For every code-shape decision the plan will encode that *isn't* already captured, find the existing precedent in the repo and cite it. Concretely:
 
 - **Import style** — relative vs absolute, `.ts` suffixes, barrel files. Grep two or three existing modules in the affected directory.
 - **Validation idiom** — Pydantic v2 explicit `ConfigDict` vs class-arg shorthand, `field_validator` vs `model_validator`, where validation lives (model vs service). Read a couple of existing domain models.

@@ -62,35 +62,11 @@ Before declaring the step complete:
 
 ## SOLID checklist
 
-Apply these as **questions you ask of a diff**, not as gates that fire automatically. "This principle doesn't apply here" is a valid answer — but you should be able to say it explicitly.
-
-- **Single Responsibility.** Does this module have one reason to change? If a change to persistence and a change to validation both modify the same file, the file is doing two jobs.
-- **Open/Closed.** Could a future variant be added by extension (new file, new implementation of an existing interface) rather than modification (editing this file)? If every new case requires editing the same switch statement, the design is closed against the wrong axis.
-- **Liskov Substitution.** If this is a subtype or implementation of an interface, can it be used wherever the interface is expected without surprising the caller? Throwing `NotImplementedError` from a method the interface promises is a Liskov violation.
-- **Interface Segregation.** Are clients forced to depend on methods they don't use? A fat interface that 80% of clients only use 20% of is asking to be split.
-- **Dependency Inversion.** Does this code depend on a concrete class it could depend on an interface for? A direct import of a database driver from a domain module is the canonical violation.
-
-Per-diff, not per-codebase. You are not re-auditing the whole project. You are checking that the changes you just made don't introduce a violation.
+See `.claude/references/solid-checklist.md` for the five principles. Apply per-diff at the Refactor step and during plan-time step review — questions you ask of the changes in front of you, not a re-audit of the codebase. "Doesn't apply here" is a valid answer when you can say it explicitly.
 
 ## Clean Architecture layering
 
-Layers, innermost to outermost:
-
-1. **Domain** — pure business logic, entities, value objects. No I/O. No framework imports. No knowledge of databases, HTTP, files, time, randomness.
-2. **Application** — use cases, services that orchestrate domain objects. Defines *ports* (interfaces) for what it needs from the outside world.
-3. **Adapters** — implementations of those ports. Translate between the application's port interface and a specific external system (sqlite repo, HTTP client, file reader, agent runtime tool).
-4. **Infrastructure / framework** — wiring, dependency injection, framework entry points (CLI, web server, agent runtime).
-
-**The dependency rule, non-negotiable:** code in an inner layer must not depend on code in an outer layer. Domain knows nothing about application. Application knows nothing about adapters. Adapters know nothing about framework wiring.
-
-In practice:
-
-- A domain class never imports from `adapters/`, `infrastructure/`, or any third-party I/O library.
-- An application service depends on a port interface declared in the application layer, not on the concrete adapter.
-- An adapter depends on the port it implements and on the third-party library it wraps.
-- Framework wiring composes everything; nothing imports from framework wiring.
-
-When you're unsure which layer a piece of code belongs in — or whether a new module justifies a new layer — invoke the `architect` subagent in fresh context with the design question. Do not guess on architectural boundaries; the cost of getting it wrong propagates.
+See `.claude/references/clean-architecture-layers.md` for the layer definitions, the dependency rule, and the in-practice import constraints. When unsure which layer a piece of code belongs in — or whether a new module justifies a new layer — invoke the `architect` subagent in fresh context with the design question. Do not guess on architectural boundaries; the cost of getting it wrong propagates.
 
 ## Karpathy discipline
 
@@ -219,3 +195,15 @@ Invoke the architect at plan time when the layer-boundary question would otherwi
 - Any time you would otherwise guess at intent.
 
 The cost of asking is one round-trip. The cost of guessing wrong propagates through every subsequent step.
+
+## Common rationalizations
+
+The TDD loop and commit cadence above are easy to talk yourself out of. The table below names the five most common excuses and the rule each one breaks. If you find yourself reasoning the excuse, stop — the rebuttal applies.
+
+| Excuse | Rebuttal |
+|---|---|
+| "I'll skip the smoke-import; it's a one-line fix." | The check costs five seconds. The class of bug it catches — eager `__init__.py` imports, broken legacy imports in adjacent modules, missing package initializers — surfaces 30+ seconds into the tester's run as "red for the wrong reason," after the tester has invested effort against a contract its tests can't exercise. Run it. (See *Before red — smoke import*.) |
+| "This one extra field/method will save a future step." | Speculative scope is bugs. The minimum-implementation rule is literal: no fields, methods, branches, or error handling not required by a failing test. If a future step needs it, write it then with its own test. (See *Green*.) |
+| "I'll opportunistically refactor this adjacent code while I'm here." | Refactor scope is the diff for *this* step. Opportunistic rewrites are a separate step or a separate feature; folding them in entangles revertability and inflates the diff under review. (See *Refactor*.) |
+| "Tests pass, lint passes — I don't need to commit/pause yet; I'll fold this into the next step." | Reversibility without a commit is a polite lie. The moment work on step N+1 starts, the unstaged diff for step N entangles. Each step ends in its own commit and its own pause. (See *Verify* substeps 5–6.) |
+| "`git add -A` is faster than listing files." | It picks up untracked detritus (`__pycache__/`, sqlite sidecars, IDE state) the project's `.gitignore` may not yet cover, and it produces commits that aren't cleanly bisectable. Stage the files the step changed, explicitly, every time. (See *Verify* substep 5.) |

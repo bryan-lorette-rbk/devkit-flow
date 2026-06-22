@@ -16,6 +16,7 @@ docs/
   devkit-orientation.md    this file (pack-owned)
   skills/, agents/,        the devkit pack itself
   commands/, hooks/
+  references/              checklists loaded on demand (SOLID, Clean Arch, security categories)
 CLAUDE.md                  project index + project-specific conventions
 ```
 
@@ -24,6 +25,8 @@ Two sources of truth, addressed differently: `docs/` is human-first and durable 
 The engineering rules (TDD discipline, SOLID checklist, Clean Architecture layering, etc.) live in the pack's skills and are loaded automatically. This file does not repeat them.
 
 ## Workflow commands
+
+The pack's five commands cover the standard six-phase software-delivery lifecycle (Define → Plan → Build → Verify → Review → Ship). `/build` covers both Build and Verify (per-step tester + verify substep); `/feature-merge` covers Review and Ship (three gates plus the merge proposal). The command names are the workflow vocabulary; this paragraph exists for cross-framework orientation only.
 
 Available now:
 
@@ -36,6 +39,14 @@ Available now:
 - **`/checkpoint <description>`** — mid-feature doc-sync and amendments. Loads the documenter skill to propose (never silently apply) changes to specs, plans, ADRs, and state.md. Three modes: with a description (amendment), `/checkpoint park` (park the feature without merging), or no args (interactive: ask what changed or run a lightweight drift-reconciliation pass).
 
 - **`/feature-merge`** — close out a feature. Three gates in fixed order: (1) tests pass; (2) docs reconciliation (Pattern D + acceptance-criteria coverage); (3) security review by the `security-reviewer` subagent in fresh context. On success, documenter writes `docs/summaries/<feature>.md`, updates domain docs if applicable, marks any parked features as superseded, proposes the merge mechanics, waits for user confirmation, then clears state.md. Halts on any gate failure; merge is always proposed (never auto-executed).
+
+### Housekeeping commands
+
+Project-housekeeping commands run outside the feature lifecycle. No active feature required.
+
+- **`/adopt [<area>]`** — bootstrap durable memory when an existing codebase adopts the pack. Surveys conventions (with file:line evidence) into `CLAUDE.md`'s *Project conventions*; discovers and confirms the existing domain map; writes terse baseline `docs/domains/<domain>.md` docs (each with an *as-built rationale* subsection); and — only for decisions you flag as load-bearing *and* reversible — writes ADRs. Propose-before-write throughout; `state.md` stays idle. Incremental and idempotent: the first run documents the spine, re-runs propose deltas, and an optional `<area>` scopes the pass to one subsystem. Run it once after install on a mature project, before your first `/feature-start`. Greenfield projects don't need it — memory grows feature by feature.
+
+- **`/claude-md-merge`** — interactive reconciliation between the project's `CLAUDE.md` and the canonical devkit-compliant structure (title, description, *How to read this project*, orientation reference, *Project conventions*, *When in doubt*). Detects sections that are present, semantically equivalent under a different heading, or partial; proposes section-by-section merges via the documenter skill's *propose before writing* discipline. Idempotent — a clean run on a compliant file reports "nothing to merge." Use after declining `install.sh`'s append prompt, after a pack update changed the template, or anytime an existing `CLAUDE.md` has overlapping content the installer's one-line append can't handle thoughtfully.
 
 ## Commit cadence
 

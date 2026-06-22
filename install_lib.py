@@ -43,7 +43,7 @@ from pathlib import Path
 # --- File mapping --------------------------------------------------------------
 # Each entry: (path-under-pack/, path-under-target/). Pack files that map to
 # .claude/ tracked locations.
-TRACKED_DIRS = ("skills", "agents", "commands", "hooks")
+TRACKED_DIRS = ("skills", "agents", "commands", "hooks", "references")
 EXCLUDED_PACK_FILES = ("hooks/settings.json.fragment",)
 # Top-level pack files that install (and track) as singletons under .claude/.
 # Each entry: (pack-relative-path, target-relative-path).
