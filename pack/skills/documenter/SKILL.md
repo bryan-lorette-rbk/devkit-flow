@@ -24,6 +24,8 @@ Concretely:
 
 Edits to `.claude/state.md` are an exception: state.md is the working pointer, not a durable doc, and routine field updates (`Phase`, `Next step`) don't need confirmation. Substantive state.md changes (clearing Active feature, parking a feature, adding Open questions) still propose first.
 
+**Multi-doc passes (notably at merge).** Some invocations produce or amend several docs at once — most commonly `/feature-merge`, where you author the summary, may update a domain doc, and may carry a Gate-2 amendment in the same pass. Propose the *whole set* as one batch and wait for confirmation before writing *any* of them. Writing the summary, then proposing the domain-doc update, then proposing the amendment turns one reviewable picture into three disjoint ones and tempts a silent write in the middle. One proposal, every affected doc named, then apply the confirmed set.
+
 ## What lives where
 
 The pack's memory layout has each document owning a different facet of project memory. Knowing which doc owns what is the difference between a clean amendment and one that drifts state across two files.
@@ -92,7 +94,7 @@ When parking, propose the state.md edit (it's substantive). Confirm. Apply.
 
 If nothing is drifting, return a one-line "no drift detected" and exit. If drift is found, surface it as a finding and let the user decide whether to amend (and what shape).
 
-This is a lighter-weight pass than what the slice-5 hook automates on `PostToolUse`. Both layers complement: hook catches drift at the moment of edit; `/checkpoint` no-args catches accumulated drift the user wants to audit on demand.
+This is a lighter-weight pass than what the `doc-drift-detector` hook automates on `PostToolUse`. Both layers complement: the hook catches drift at the moment of edit; `/checkpoint` no-args catches accumulated drift the user wants to audit on demand.
 
 ## Summary authoring (loaded by `/feature-merge`)
 
@@ -111,6 +113,7 @@ Sections:
 - **What shipped.** One or two paragraphs distilling the merged behavior. Concrete enough that a reader can predict what `read_note("known-id")` returns without opening the spec.
 - **What changed mid-feature.** Every `> **Amendment YYYY-MM-DD ...** ...` blockquote you find in the merged spec, plan, or both. Summarize each in one line with the date and the reason. This is the rolling change-log the spec/plan amendments produced. (Mechanical: grep the merged docs for `> **Amendment`; surface each as a bullet.)
 - **Architectural notes.** Any ADRs the feature produced or affected. Cite by number; one or two lines of why-this-mattered. If the architect was invoked but no ADR resulted (recommendation was "follow precedent"), note that too — the consultation is itself project history.
+- **Dependency / manifest changes.** If the feature's commits touched a build manifest (`pyproject.toml`, `package.json`, `Cargo.toml`, or a lockfile), name the dependencies added, changed, or removed and why. (Mechanical: `git diff <mainline>..HEAD -- pyproject.toml package.json Cargo.toml` and the project's lockfile.) Cross-reference the security-reviewer's dependency-hygiene findings rather than repeating them. If no manifest changed, omit the section — most features don't touch deps.
 - **Security review notes.** The non-critical findings the security-reviewer surfaced (critical findings would have blocked the merge; medium/low/informational findings ship with the merge and are recorded here so they're not lost).
 - **Followups.** Anything the spec listed as "Out" or "Risks / known trade-offs" that the merge defers to a future feature. Include "supersede" notes for any parked features the merging feature absorbed.
 
@@ -218,7 +221,7 @@ The "propose before writing" discipline produces a round-trip per amendment. Tha
 - **`pm` skill** is the source of truth for spec/plan depth checklists you must preserve. Don't duplicate the checklists here; reference them.
 - **`engineer` skill**'s plan-time content is the source of truth for plan step shape (Files, type signatures, test list, conventions applied, why-this-order, SOLID notes). When amending a plan to add or modify a step, follow that shape.
 - **`architect` subagent** is invoked by the user (or by you when escalating per "When to escalate") for cross-cutting pattern questions surfaced during amendment.
-- **The drift-detection hook** (slice 5, not yet shipped) will fire on `PostToolUse` and surface drift; resolving that drift is your job, invoked via `/checkpoint` or directly.
+- **The drift-detection hook** fires on `PostToolUse` and surfaces drift; resolving that drift is your job, invoked via `/checkpoint` or directly.
 
 ## When to stop and ask the user
 

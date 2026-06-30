@@ -96,6 +96,6 @@ The documenter skill's "When to stop and ask the user" section names additional 
 
 ## Notes on overlap with the drift-detection hook
 
-The slice-5 drift-detection hook (when shipped) fires on `PostToolUse` and surfaces drift warnings the user must address. `/checkpoint` no-args is the manual equivalent — same checks, on-demand rather than reactive. Both layers complement: the hook catches drift at the moment of edit (cheap to fix immediately); `/checkpoint` catches accumulated drift the user wants to audit deliberately.
+The `doc-drift-detector` hook fires on `PostToolUse` and surfaces drift warnings the user must address. `/checkpoint` no-args is the manual equivalent — same checks, on-demand rather than reactive. Both layers complement: the hook catches drift at the moment of edit (cheap to fix immediately); `/checkpoint` catches accumulated drift the user wants to audit deliberately.
 
-When the hook lands, this command's no-args reconciliation pass may become redundant for most cases — but the manual trigger is still valuable for "I want to audit before committing a batch" workflows. Don't deprecate; revisit after the hook has usage data.
+The hook covers most at-edit drift, so the no-args reconciliation pass is rarely the first line of defense — but it stays valuable for "I want to audit before committing a batch" workflows, where a deliberate sweep beats reacting to per-edit warnings.

@@ -17,11 +17,12 @@ Read `.claude/state.md`. Verify:
 1. `Active feature` is not `none`.
 2. `Spec` points to an existing file; spec `status` is `approved` or `approved (amended ...)`.
 3. `Plan` points to an existing file; plan `status` is `approved` or `approved (amended ...)`.
-4. Working tree is clean (`git status` reports no uncommitted changes).
+4. No uncommitted changes to **tracked** files (`git diff --quiet && git diff --cached --quiet`). Untracked files do not block on their own, but they are not ignored — see the handling below.
 5. Current branch matches `Active branch` in state.md.
 
 If any precondition fails, **stop and report**. Common cases:
-- Dirty working tree → user commits or stashes; re-run.
+- Uncommitted changes to tracked files → user commits or stashes; re-run.
+- Untracked files present → surface them and ask before proceeding. An untracked file is as likely to be a source file the engineer forgot to `git add` (which won't be in the merge — a real problem) as it is to be build detritus (harmless). Don't silently proceed past untracked files, and don't silently treat them as blocking; let the user commit the forgotten ones and confirm the rest are intended omissions, then re-run.
 - Plan still `draft` → user approves the plan (or runs `/plan` if no plan exists).
 - Spec still `draft` → user approves the spec; if plan doesn't exist, run `/plan` first.
 
@@ -78,9 +79,19 @@ Load the `documenter` skill again. Run the "Summary authoring" pattern (see the 
 
 Surface all proposed doc writes to the user before applying. The documenter skill's cardinal "propose before writing" discipline holds at merge time too.
 
+### Merge strategy
+
+The pack does not assume a merge strategy — squash, merge commit, and rebase are all legitimate, and the choice is a project convention, not a pack decision. Determine it in this fixed order:
+
+1. **`CLAUDE.md` convention.** If the project states a merge strategy (or a PR-tool workflow like `gh pr create`), follow it.
+2. **Existing history.** If `CLAUDE.md` is silent, infer from the mainline's recent shape (`git log --merges <mainline>` for merge commits vs a flat, squashed history) and propose what matches — name the evidence.
+3. **Ask.** If neither is conclusive, ask the user. Don't default silently to one strategy; the wrong one is annoying to undo after the fact.
+
+Carry the determined strategy into the proposal below.
+
 ### Merge proposal
 
-Once all docs are written, propose the merge mechanics. The pack does not assume a particular merge strategy (squash / merge commit / rebase) — it varies by project convention. Read `CLAUDE.md` for any stated preference; otherwise ask the user.
+Once all docs are written and the strategy is determined (above), propose the merge mechanics.
 
 Propose, in one short message:
 - The merge command (e.g., `git checkout <mainline> && git merge --no-ff feature/<slug>` for a merge commit; or `git checkout <mainline> && git merge --squash feature/<slug> && git commit` for squash).

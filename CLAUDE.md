@@ -68,13 +68,18 @@ Target: `chungar` (Google ADK + LiteLLM personal-assistant agent at `/Users/brya
 - **addyosmani/agent-skills borrows (Slices A–D)** landed 2026-06-12. Net changes: anti-rationalization tables added to engineer / tester / security-reviewer / documenter; `pack/references/{solid-checklist,clean-architecture-layers,security-categories}.md` extracted and engineer + security-reviewer updated to cite them; `pack/references/` wired into installer (`install.sh`, `install_lib.py`) + memory-layout doc; pm gained a quick-reference architect-invocation table with documenter cross-reference; README and devkit-orientation gained a Define/Plan/Build/Verify/Review/Ship lifecycle mapping. Validates on chungar's next `/build` (rationalization defense) and the next `/feature-merge` (security-reviewer citing the categories reference).
 - **CLAUDE.md merge UX (2026-06-15)** landed three pieces: (a) `install.sh` now shows a diff-style preview of the proposed append before the Y/n prompt and mentions `/claude-md-merge` as the structured-merge alternative; (b) new `--claude-md-only` install flag with early-exit, useful for re-entering just this step after declining or after a pack template change; (c) new pack-shipped slash command `pack/commands/claude-md-merge.md` — interactive reconciliation of an existing `CLAUDE.md` against the six-element canonical structure (title, description, *How to read this project*, orientation reference, *Project conventions*, *When in doubt*) using documenter's *propose before writing* discipline; idempotent; not gated on an active feature. TEMPLATE-CHANGED advisory updated to suggest `/claude-md-merge`. Validates on chungar's next pack update — re-run `install.sh` against chungar to pick up the slash command, then exercise it on chungar's hand-merged `CLAUDE.md` to test the messy case.
 
-**Polish items** (forward-referenced from prior validation reports):
+**Polish items.**
 
-- **documenter skill** — clarify multi-doc merge-time scenario in the cardinal-discipline section.
-- **`/feature-merge`** — tighten "no uncommitted changes" vs "untracked files" precondition wording; elevate the merge-strategy fallback to a named subsection.
-- **Package-manifest commit surfacing in `/feature-merge` summary** — implemented but never exercised (chungar's first merge had no `pyproject.toml` changes).
-- **`/checkpoint` Pattern C (park)** — never exercised.
-- **`/checkpoint` stale language** — the "slice-5 hook (when shipped)" framing on lines 96 and 98 is now historical (hook is shipped); needs a one-line cleanup.
+Authored 2026-06-30 (polish pass, pending dogfood):
+
+- **documenter skill** — cardinal-discipline section now covers the multi-doc merge-time scenario (propose the whole doc set as one batch before writing any); fixed two stale slice-5-hook "(not yet shipped)" lines to present tense.
+- **`/feature-merge`** — precondition now distinguishes uncommitted *tracked* changes (block) from untracked files (surface + ask, since an untracked file may be a forgotten source file); merge-strategy determination elevated to its own `### Merge strategy` subsection (CLAUDE.md convention → infer from history → ask).
+- **Package-manifest surfacing in `/feature-merge` summary** — was never actually implemented (only the security-reviewer sampled deps); added a *Dependency / manifest changes* bullet to the documenter summary checklist. Still needs a dogfood with a real manifest change to exercise.
+- **`/checkpoint` stale language** — the slice-5-hook "(when shipped)" framing is now present-tense (`doc-drift-detector` is shipped).
+
+Still pending dogfood only (no authoring left):
+
+- **`/checkpoint` Pattern C (park)** — fully authored; never exercised end-to-end.
 
 **Natural next dogfood.** Re-run `install.sh` against chungar's `.claude/` (picks up commit-discipline + update path + CLAUDE.md split + `grill-me`), then either:
 
